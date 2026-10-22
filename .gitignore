@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+data/*.csv
+data/*.db
+data/*.index
+data/*.json
+data/*.jsonl
+data/*.faiss
+data/*_postings.csv
+.env.*
+!.env.example
+logs/

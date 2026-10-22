@@ -1,0 +1,6 @@
+# Optional dependencies for embedding-based historical similarity search.
+-r requirements-agentic.txt
+sentence-transformers>=3.0
+faiss-cpu>=1.8
+scikit-learn>=1.4
+pandas>=2.1

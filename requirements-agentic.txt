@@ -1,0 +1,8 @@
+# Frameworks and observability for the CrewAI + ADK application.
+-r requirements.txt
+crewai>=1.15,<2
+google-adk[a2a]>=2.12,<3
+mcp>=1.0
+httpx>=0.27
+langfuse>=3
+openinference-instrumentation-crewai>=0.1
