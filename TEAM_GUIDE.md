@@ -4,7 +4,14 @@ This guide is the project map. Read sections 1–4 first; the rest helps with th
 
 ## 1. Open and run the app
 
-First, each teammate creates a folder named `JobShield` wherever they keep projects. For example, they can create it under Documents or on another drive; the location can differ on every computer. If they are joining through GitHub, follow [GitHub teamwork](#8-github-teamwork) to clone the files into this folder. If files are shared another way, copy/extract the project files into it. Then in VS Code choose **File → Open Folder** and select `JobShield`. Open **Terminal → New Terminal** after opening it.
+Each teammate needs to accept the private GitHub invitation before cloning. Open VS Code and choose **File → Open Folder**; select a parent location where you keep projects, such as Documents. Open **Terminal → New Terminal** and run:
+
+```powershell
+git clone https://github.com/ShreyaSharma2025/JobShield.git
+cd JobShield
+```
+
+The clone command creates the `JobShield` folder automatically. In VS Code choose **File → Open Folder** and select the newly created `JobShield` folder. The folder path can be different on every computer.
 
 Check that the terminal is in the project root:
 
@@ -27,7 +34,7 @@ streamlit run app.py
 
 Open the `localhost` link Streamlit prints. Keep this terminal open while using the app. Paste a complete JD and click **Analyze posting**. Results show extracted details, exact matching text, current risk category, and what checks did or did not run. The local history database is `data/jobshield.sqlite3`.
 
-If PowerShell blocks activation, the per-terminal command is:
+If PowerShell blocks activation, run this once in that terminal, then activate again:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
@@ -42,7 +49,7 @@ Install the framework dependencies inside the active `.venv`:
 py -m pip install -r requirements-agentic.txt
 ```
 
-Copy `.env.example` to `.env`; add your own Google model API key. For public company search, add a Brave Search API key. Never paste keys in chat or commit `.env`.
+Create a private environment file by running `Copy-Item .env.example .env` in the project root. Open `.env` in VS Code and add your own Google model API key after `GOOGLE_API_KEY=`. Each member who runs the AI features needs a key of their own; do not share it in chat or commit `.env`. A Brave Search API key is optional and is only needed for public web search.
 
 Use **two VS Code terminals**:
 
@@ -105,7 +112,7 @@ Do not claim model token costs are measured when model callbacks returned no usa
 
 ## 5. Dataset, splits, and fair evaluation
 
-The EMSCAD Fake Job Posting dataset is included in this private GitHub repository at `data/fake_job_postings.csv`, so teammates get it when they clone. The Kaggle copy lists CC0; a public [Hugging Face mirror](https://huggingface.co/datasets/victor/real-or-fake-fake-jobposting-prediction) also lists CC0. EMSCAD has 17,880 postings from 2012–2014, including 866 fraudulent examples, so it is old and imbalanced and may not represent current Indian internships. Cite the [original EMSCAD research paper](https://doi.org/10.3390/fi9010006) in your presentation, and do not call this data ground truth for all present-day jobs.
+The EMSCAD Fake Job Posting dataset is included in this private GitHub repository at `data/fake_job_postings.csv`, so teammates receive it automatically when cloning; no separate dataset download is needed. The Kaggle copy lists CC0; a public [Hugging Face mirror](https://huggingface.co/datasets/victor/real-or-fake-fake-jobposting-prediction) also lists CC0. EMSCAD has 17,880 postings from 2012–2014, including 866 fraudulent examples, so it is old and imbalanced and may not represent current Indian internships. Cite the [original EMSCAD research paper](https://doi.org/10.3390/fi9010006) in your presentation, and do not call this data ground truth for all present-day jobs.
 
 After cloning the project, install the search dependencies and build each teammate's local FAISS index:
 
