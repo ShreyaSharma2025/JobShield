@@ -51,7 +51,7 @@ Use **two VS Code terminals**:
 
 The CrewAI Flow starts from the Streamlit request. It starts an MCP server as a child process when the ADK verifier needs tools. The verifier has two tools: RDAP domain registration lookup and Brave public web search. If keys, network, company name, or the verifier are missing, the result says unavailable/needs verification. An RDAP date or a company search hit alone is not proof that this specific job is authentic.
 
-To enable historical similarity, obtain the dataset (section 5), install `requirements-search.txt`, and build the FAISS index. The embedding model downloads the first time. Similarity stays optional if the dataset/license or download is unavailable.
+To enable historical similarity, the dataset is already included at `data/fake_job_postings.csv`. Install `requirements-search.txt` and build a local FAISS index. The embedding model downloads the first time. Similarity stays optional if setup or model download is unavailable.
 
 ## 3. Understand the actual agent flow
 
@@ -105,9 +105,9 @@ Do not claim model token costs are measured when model callbacks returned no usa
 
 ## 5. Dataset, splits, and fair evaluation
 
-The GitHub project intentionally excludes the large dataset and generated index, so each teammate keeps their own local copy. Use the [EMSCAD Fake Job Posting dataset on Kaggle](https://www.kaggle.com/datasets/shivamb/real-or-fake-fake-jobposting-prediction). It contains `fake_job_postings.csv`; Kaggle lists CC0 for this copy. A public [Hugging Face mirror](https://huggingface.co/datasets/victor/real-or-fake-fake-jobposting-prediction) also lists CC0. Download the CSV and place it at `data/fake_job_postings.csv`. EMSCAD has 17,880 postings from 2012–2014, including 866 fraudulent examples, so it is old and imbalanced and may not represent current Indian internships. Cite the [original EMSCAD research paper](https://doi.org/10.3390/fi9010006) in your presentation, and do not call this data ground truth for all present-day jobs.
+The EMSCAD Fake Job Posting dataset is included in this private GitHub repository at `data/fake_job_postings.csv`, so teammates get it when they clone. The Kaggle copy lists CC0; a public [Hugging Face mirror](https://huggingface.co/datasets/victor/real-or-fake-fake-jobposting-prediction) also lists CC0. EMSCAD has 17,880 postings from 2012–2014, including 866 fraudulent examples, so it is old and imbalanced and may not represent current Indian internships. Cite the [original EMSCAD research paper](https://doi.org/10.3390/fi9010006) in your presentation, and do not call this data ground truth for all present-day jobs.
 
-Put an approved `fake_job_postings.csv` at `data/fake_job_postings.csv`, then:
+After cloning the project, install the search dependencies and build each teammate's local FAISS index:
 
 ```powershell
 py -m pip install -r requirements-search.txt

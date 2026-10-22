@@ -27,4 +27,4 @@ See [TEAM_GUIDE.md](TEAM_GUIDE.md) for setup, agent explanations, mentor rubric 
 
 ## Safety and data
 
-Postings are stored locally in SQLite for project auditing. Use sample or consented data in demos. `.env`, databases, logs, and dataset files are excluded from Git. Never commit API keys or private student data. A missing or unavailable company result means **inconclusive**, not fraudulent.
+The labeled EMSCAD dataset is included in this private repository for the course project. Each analysis and its local SQLite history stay on the computer running the app. `.env`, databases, and logs are excluded from Git. Never commit API keys or private student data. A missing or unavailable company result means **inconclusive**, not fraudulent.
