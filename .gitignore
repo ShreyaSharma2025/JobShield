@@ -4,6 +4,7 @@ __pycache__/
 .env
 data/*.csv
 data/*.db
+data/*.sqlite3
 data/*.index
 data/*.json
 data/*.jsonl
