@@ -10,6 +10,8 @@ data/*.json
 data/*.jsonl
 data/*.faiss
 data/*_postings.csv
+!data/synthetic_indian_scams.json
 .env.*
 !.env.example
 logs/
+

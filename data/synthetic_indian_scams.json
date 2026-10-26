@@ -1,0 +1,37 @@
+[
+  {
+    "id": "SCAM_IN_001",
+    "title": "Data Entry & Back Office Assistant (Work From Home)",
+    "category_expected": "High Risk",
+    "description": "Urgent Requirement! We are hiring 50 candidates for Data Entry and Back Office Assistant (Remote / Work From Home). Salary: Rs. 45,000 to Rs. 65,000 per month. Freshers can apply, no prior experience or degree required. 100% placement guaranteed. Selected candidates must pay a refundable registration fee of Rs. 1,499 for ID card creation and software license kit. Send your resume and contact HR Priya directly on WhatsApp: +91 9876543210. Limited slots, apply immediately!",
+    "tags": ["upfront_fee", "unrealistic_salary", "whatsapp_contact", "urgency", "guaranteed_job"]
+  },
+  {
+    "id": "SCAM_IN_002",
+    "title": "MNC Graduate Trainee Engineer - Campus Recruitment",
+    "category_expected": "High Risk",
+    "description": "Congratulations! You have been shortlisted for Graduate Trainee Engineer at Tata Consultancy Services (TCS) Innovation Hub, Bangalore. CTC: 8.5 LPA. No interview required as selection is based on academic profile. To confirm your joining letter, you must submit your Aadhaar number, bank account details, and send OTP received for employee portal verification. Additionally, deposit Rs. 3,500 security deposit to the hiring manager UPI ID tcs.recruitment@fakeupi. Send proof to tcs.hr.offcampus@gmail.com.",
+    "tags": ["sensitive_info", "otp_request", "security_deposit", "personal_email", "no_interview"]
+  },
+  {
+    "id": "SCAM_IN_003",
+    "title": "Part-Time Social Media Task Specialist",
+    "category_expected": "High Risk",
+    "description": "Earn Rs. 2,000 to Rs. 5,000 daily by simply liking YouTube videos and following Instagram pages! Part-time remote internship for college students. Daily payout directly to your bank or GPay. To activate your task account and access VIP tasks, pay Rs. 999 training fee. Join our official Telegram channel t.me/fast_task_earning_india to start today. Urgent hiring, only today!",
+    "tags": ["upfront_fee", "telegram_contact", "unrealistic_salary", "urgency"]
+  },
+  {
+    "id": "AMBIGUOUS_IN_004",
+    "title": "Junior Frontend Web Developer Intern - Early Stage Startup",
+    "category_expected": "Needs Verification",
+    "description": "NexGen Innovations (stealth-mode fintech startup in Pune) is hiring a Junior Frontend Web Developer Intern. Duration: 3 months. Stipend: Rs. 15,000/month. Skills: React.js, Tailwind CSS, JavaScript. Work with founding team building MVP. Apply immediately with portfolio and GitHub links to hiring@nexgeninnovations.in or reach out on LinkedIn. Unverified website domain, verify startup registration on MCA portal before accepting.",
+    "tags": ["startup", "unverified_domain", "normal_stipend"]
+  },
+  {
+    "id": "LEGIT_IN_005",
+    "title": "Software Engineering Intern - Summer 2026",
+    "category_expected": "Low Risk",
+    "description": "Microsoft India is hiring Software Engineering Interns for Summer 2026 across Hyderabad, Bangalore, and Noida. Candidates must be currently enrolled in B.Tech/M.Tech in Computer Science or related engineering discipline. Competitive industry-standard monthly stipend provided. Selection includes online coding assessment followed by technical interviews. Microsoft never charges any application, training, or onboarding fee at any stage. Apply exclusively through official Microsoft careers portal: https://careers.microsoft.com/us/en/job/1829402.",
+    "tags": ["legitimate", "official_portal", "no_fees", "established_company"]
+  }
+]

@@ -22,7 +22,7 @@ public_check_tools = McpToolset(
         ),
         timeout=10,
     ),
-    tool_filter=["lookup_domain_rdap", "search_company_public_sources"],
+    tool_filter=["lookup_domain_rdap", "lookup_domain_dns", "search_company_public_sources"],
 )
 
 root_agent = Agent(
