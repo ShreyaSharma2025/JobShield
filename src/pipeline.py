@@ -92,31 +92,90 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
 
     queried_sites = []
 
+    # Parallel execution of external verification checks for fast response
+    import concurrent.futures
+
+    dns_task_res = None
+    rdap_task_res = None
+    probe_task_res = None
+    search_task_res = None
+
+    def _run_dns():
+        if domain_to_check:
+            try:
+                return lookup_domain_dns(domain_to_check)
+            except Exception:
+                return None
+        return None
+
+    def _run_rdap():
+        if domain_to_check and domain_to_check not in free_mail_providers:
+            try:
+                return lookup_domain_rdap(domain_to_check)
+            except Exception:
+                return None
+        return None
+
+    def _run_probe():
+        target_live = None
+        if posting.links:
+            target_live = posting.links[0]
+        elif domain_to_check and domain_to_check not in free_mail_providers:
+            target_live = f"https://{domain_to_check}"
+        if target_live:
+            try:
+                import httpx
+                resp = httpx.get(
+                    target_live,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
+                    timeout=2.0,
+                    follow_redirects=True,
+                )
+                return {"target": target_live, "resp": resp}
+            except Exception as e:
+                return {"target": target_live, "error": e}
+        return None
+
+    def _run_search():
+        if posting.company_name:
+            try:
+                clean = posting.company_name.strip()
+                return search_company_public_sources(clean, "careers official site")
+            except Exception:
+                return None
+        return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        f_dns = executor.submit(_run_dns)
+        f_rdap = executor.submit(_run_rdap)
+        f_probe = executor.submit(_run_probe)
+        f_search = executor.submit(_run_search)
+
+        dns_task_res = f_dns.result()
+        rdap_task_res = f_rdap.result()
+        probe_task_res = f_probe.result()
+        search_task_res = f_search.result()
+
     if domain_to_check:
         company_check.domain = domain_to_check
 
-        # Check DNS
+        # 1. Evaluate DNS Result
         dns_signal = "Neutral / Needs Verification"
         dns_summary = "DNS resolution offline"
         dns_why = "DNS verifies if a domain has real, operational servers behind it."
-        try:
-            dns_res = lookup_domain_dns(domain_to_check)
-            if dns_res.get("status") == "resolved":
-                ips = dns_res.get("ip_addresses", [])
-                company_check.dns_status = f"Active DNS host (IP: {', '.join(ips[:2])})"
-                company_check.findings.append(f"Domain '{domain_to_check}' resolves to active host servers.")
-                dns_summary = f"Resolves to active IP(s): {', '.join(ips[:2])}"
-                dns_signal = "Genuine Signal"
-                dns_why = f"Domain '{domain_to_check}' has valid A/AAAA DNS records, confirming an active network presence."
-            else:
-                company_check.dns_status = "Unresolved or inactive domain"
-                company_check.findings.append(f"Domain '{domain_to_check}' failed host DNS resolution.")
-                dns_summary = "Domain failed DNS lookup (NXDOMAIN / No A-records)"
-                dns_signal = "Suspicious / Scam Signal"
-                dns_why = f"Claimed domain '{domain_to_check}' has no active DNS records. Scammers frequently invent non-existent fake domains."
-        except Exception as e:
-            company_check.dns_status = "DNS check offline"
-            dns_summary = f"DNS query exception: {type(e).__name__}"
+        if dns_task_res and dns_task_res.get("status") == "resolved":
+            ips = dns_task_res.get("ip_addresses", [])
+            company_check.dns_status = f"Active DNS host (IP: {', '.join(ips[:2])})"
+            company_check.findings.append(f"Domain '{domain_to_check}' resolves to active host servers.")
+            dns_summary = f"Resolves to active IP(s): {', '.join(ips[:2])}"
+            dns_signal = "Genuine Signal"
+            dns_why = f"Domain '{domain_to_check}' has valid A/AAAA DNS records, confirming an active network presence."
+        else:
+            company_check.dns_status = "Unresolved or inactive domain"
+            company_check.findings.append(f"Domain '{domain_to_check}' failed host DNS resolution.")
+            dns_summary = "Domain failed DNS lookup (NXDOMAIN / No A-records)"
+            dns_signal = "Suspicious / Scam Signal"
+            dns_why = f"Claimed domain '{domain_to_check}' has no active DNS records. Scammers frequently invent non-existent fake domains."
 
         queried_sites.append({
             "site_name": "Active DNS Nameserver Resolution",
@@ -128,35 +187,33 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
             "rationale": dns_why,
         })
 
-        # Check RDAP (Official WHOIS Registration Age)
+        # 2. Evaluate RDAP Result
         rdap_url = f"https://rdap.org/domain/{domain_to_check}"
         if domain_to_check not in free_mail_providers:
             rdap_signal = "Neutral / Needs Verification"
             rdap_summary = "Querying global ICANN/IANA RDAP database"
             rdap_why = "Checks how long the domain has existed. Brand new domains or unlisted domains are high risk."
-            try:
-                rdap_res = lookup_domain_rdap(domain_to_check)
-                rdap_url = rdap_res.get("source_url", rdap_url)
-                if rdap_res.get("status") == "found":
-                    events = {e.get("action"): e.get("date") for e in rdap_res.get("events", [])}
-                    reg_date = events.get("registration", "")[:10]
-                    exp_date = events.get("expiration", "")[:10]
-                    company_check.rdap_reg_date = reg_date
-                    company_check.rdap_exp_date = exp_date
-                    if reg_date:
-                        company_check.findings.append(f"Official RDAP WHOIS: Domain registered on {reg_date} (expires {exp_date or 'N/A'}).")
-                        rdap_summary = f"Domain registered: {reg_date} | Expires: {exp_date or 'N/A'}"
-                        rdap_signal = "Genuine Signal"
-                        rdap_why = f"Global WHOIS registry confirms an established enterprise domain created on {reg_date}."
-                    if rdap_res.get("source_url") and rdap_res["source_url"] not in company_check.sources:
-                        company_check.sources.append(rdap_res["source_url"])
-                elif rdap_res.get("status") == "not_found":
-                    company_check.findings.append(f"RDAP WHOIS: Domain '{domain_to_check}' is NOT registered in official global TLD registry.")
-                    rdap_summary = "Domain not found in global registry"
-                    rdap_signal = "Suspicious / Scam Signal"
-                    rdap_why = "Domain is not registered with official ICANN registrars."
-            except Exception:
-                rdap_summary = "RDAP registry temporarily unreachable"
+            if rdap_task_res and rdap_task_res.get("status") == "found":
+                rdap_url = rdap_task_res.get("source_url", rdap_url)
+                events = {e.get("action"): e.get("date") for e in rdap_task_res.get("events", [])}
+                reg_date = events.get("registration", "")[:10]
+                exp_date = events.get("expiration", "")[:10]
+                company_check.rdap_reg_date = reg_date
+                company_check.rdap_exp_date = exp_date
+                if reg_date:
+                    company_check.findings.append(f"Official RDAP WHOIS: Domain registered on {reg_date} (expires {exp_date or 'N/A'}).")
+                    rdap_summary = f"Domain registered: {reg_date} | Expires: {exp_date or 'N/A'}"
+                    rdap_signal = "Genuine Signal"
+                    rdap_why = f"Global WHOIS registry confirms an established enterprise domain created on {reg_date}."
+                if rdap_task_res.get("source_url") and rdap_task_res["source_url"] not in company_check.sources:
+                    company_check.sources.append(rdap_task_res["source_url"])
+            elif rdap_task_res and rdap_task_res.get("status") == "not_found":
+                company_check.findings.append(f"RDAP WHOIS: Domain '{domain_to_check}' is NOT registered in official global TLD registry.")
+                rdap_summary = "Domain not found in global registry"
+                rdap_signal = "Suspicious / Scam Signal"
+                rdap_why = "Domain is not registered with official ICANN registrars."
+            else:
+                rdap_summary = "RDAP registry checked"
 
             queried_sites.append({
                 "site_name": "Official Global Domain Registry (RDAP / WHOIS)",
@@ -180,26 +237,12 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
                 "rationale": f"Claimed recruiter represents '{posting.company_name or 'corporate'}' using @{domain_to_check}. Legitimate corporate recruiters from major firms strictly use corporate emails." if is_major_brand else "Free webmail may be used by micro-freelancers, but requires secondary verification.",
             })
 
-    # 2. Live Website HTTP Probe
-    live_url = None
-    if posting.links:
-        live_url = posting.links[0]
-    elif domain_to_check and domain_to_check not in free_mail_providers:
-        live_url = f"https://{domain_to_check}"
-
-    if live_url:
+    # 3. Evaluate Live HTTP Probe Result
+    if probe_task_res:
+        live_url = probe_task_res.get("target", "")
         company_check.website_url = live_url
-        probe_signal = "Neutral / Needs Verification"
-        probe_summary = "Attempting HTTP connection"
-        probe_why = "Verifies if the employer maintains an active, secure website."
-        try:
-            import httpx
-            web_resp = httpx.get(
-                live_url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
-                timeout=4.0,
-                follow_redirects=True,
-            )
+        if "resp" in probe_task_res:
+            web_resp = probe_task_res["resp"]
             company_check.website_status = f"HTTP {web_resp.status_code} ({'Active & Online' if web_resp.status_code < 400 else 'Returned Error'})"
             title_match = re.search(r"<title[^>]*>(.*?)</title>", web_resp.text, re.I | re.DOTALL)
             clean_title = ""
@@ -212,19 +255,15 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
                 company_check.findings.append(f"Live Web Probe: Connected to '{live_url}' (HTTP {web_resp.status_code})")
                 probe_summary = f"HTTP {web_resp.status_code} OK | Connected successfully"
 
-            if web_resp.status_code < 400:
-                probe_signal = "Genuine Signal"
-                probe_why = f"Web server at '{live_url}' returned HTTP {web_resp.status_code} and served active web content."
-            else:
-                probe_signal = "Suspicious / Scam Signal"
-                probe_why = f"Web server returned HTTP error {web_resp.status_code}."
-
+            probe_signal = "Genuine Signal" if web_resp.status_code < 400 else "Suspicious / Scam Signal"
+            probe_why = f"Web server at '{live_url}' returned HTTP {web_resp.status_code}."
             if live_url not in company_check.sources:
                 company_check.sources.append(live_url)
-        except Exception as e:
+        else:
+            err = probe_task_res.get("error")
             company_check.website_status = "Connection Failed / Unreachable"
-            company_check.findings.append(f"Live Web Probe: Failed to connect to '{live_url}' ({type(e).__name__})")
-            probe_summary = f"Connection failed: {type(e).__name__}"
+            company_check.findings.append(f"Live Web Probe: Failed to connect to '{live_url}' ({type(err).__name__ if err else 'Timeout'})")
+            probe_summary = f"Connection failed: {type(err).__name__ if err else 'Timeout'}"
             probe_signal = "Suspicious / Scam Signal"
             probe_why = f"Server at '{live_url}' failed to respond. Fake job postings often cite dead or unreachable URLs."
 
@@ -238,35 +277,24 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
             "rationale": probe_why,
         })
 
-    # 3. Live Public Web Search Engine (DuckDuckGo / Brave)
-    if posting.company_name:
+    # 4. Evaluate Web Search Result
+    if search_task_res and posting.company_name:
         clean_comp = posting.company_name.strip()
-        search_engine = "DuckDuckGo Live Search"
-        search_signal = "Neutral / Needs Verification"
-        search_summary = f"Searching web for '{clean_comp} careers official site'"
-        search_why = "Locates official careers pages, press releases, and verifiable job openings."
-        
-        try:
-            search_res = search_company_public_sources(clean_comp, "careers official site")
-            search_engine = search_res.get("engine", search_engine)
-            results_found = search_res.get("results", [])
-            
-            if results_found:
-                first_hit = results_found[0]
-                company_check.findings.append(f"Web Search: Discovered {len(results_found)} corporate directory and careers links via {search_engine}.")
-                for hit in results_found:
-                    if hit.get("url") and hit["url"] not in company_check.sources:
-                        company_check.sources.append(hit["url"])
-                
-                search_summary = f"Found: '{first_hit.get('title', '')}' -> {first_hit.get('url', '')}"
-                search_signal = "Genuine Signal" if not (domain_to_check in free_mail_providers and is_major_brand) else "Suspicious / Scam Signal"
-                search_why = f"Search confirmed legitimate corporate career portals exist at {first_hit.get('url', '')}. Compare contact info against these official portals."
-            else:
-                search_summary = f"No authoritative career portal found for '{clean_comp}'"
-                search_signal = "Neutral / Needs Verification"
-                search_why = "Unregistered or obscure company name without verified public job listings."
-        except Exception as e:
-            search_summary = f"Search request error: {type(e).__name__}"
+        search_engine = search_task_res.get("engine", "Live Web Search")
+        results_found = search_task_res.get("results", [])
+        if results_found:
+            first_hit = results_found[0]
+            company_check.findings.append(f"Web Search: Discovered {len(results_found)} corporate directory and careers links via {search_engine}.")
+            for hit in results_found:
+                if hit.get("url") and hit["url"] not in company_check.sources:
+                    company_check.sources.append(hit["url"])
+            search_summary = f"Found: '{first_hit.get('title', '')}' -> {first_hit.get('url', '')}"
+            search_signal = "Genuine Signal" if not (domain_to_check in free_mail_providers and is_major_brand) else "Suspicious / Scam Signal"
+            search_why = f"Search confirmed legitimate corporate career portals exist at {first_hit.get('url', '')}."
+        else:
+            search_summary = f"No authoritative career portal found for '{clean_comp}'"
+            search_signal = "Neutral / Needs Verification"
+            search_why = "Unregistered or obscure company name without verified public job listings."
 
         queried_sites.append({
             "site_name": f"Live Web Search Engine ({search_engine})",

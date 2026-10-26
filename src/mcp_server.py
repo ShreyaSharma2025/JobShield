@@ -35,7 +35,7 @@ def lookup_domain_rdap(domain: str) -> dict:
 
     source_url = f"https://rdap.org/domain/{query_domain}"
     try:
-        response = httpx.get(source_url, timeout=4.0, follow_redirects=True)
+        response = httpx.get(source_url, timeout=2.5, follow_redirects=True)
         if response.status_code == 404:
             return {"status": "not_found", "domain": clean_domain, "source_url": source_url}
         response.raise_for_status()
@@ -90,7 +90,7 @@ def search_company_public_sources(company_name: str, extra_terms: str = "") -> d
                 "https://api.search.brave.com/res/v1/web/search",
                 headers={"X-Subscription-Token": api_key, "Accept": "application/json"},
                 params={"q": query, "count": 5},
-                timeout=10,
+                timeout=2.5,
             )
             response.raise_for_status()
             hits = response.json().get("web", {}).get("results", [])
@@ -124,7 +124,7 @@ def search_company_public_sources(company_name: str, extra_terms: str = "") -> d
                 "https://html.duckduckgo.com/html/",
                 data={"q": query},
                 headers=ddg_headers,
-                timeout=5.0,
+                timeout=2.5,
             )
             if ddg_resp.status_code == 200:
                 import urllib.parse
