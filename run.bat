@@ -7,7 +7,14 @@ echo   JobShield: Multi-Agent Scam Risk Screening System
 echo ============================================================
 echo.
 
-REM 1. Check if Python is installed
+REM 1. Sync repository updates if git is available
+where git >nul 2>nul
+if %ERRORLEVEL% equ 0 (
+    echo [*] Checking for repository updates...
+    git pull --quiet 2>nul
+)
+
+REM 2. Check if Python is installed
 where python >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Python is not installed or not in PATH!

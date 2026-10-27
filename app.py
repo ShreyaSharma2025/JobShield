@@ -788,6 +788,7 @@ with tab_analyzer:
     
     def set_sample(text_val: str):
         st.session_state["jd_input"] = text_val
+        st.session_state["auto_submit"] = True
 
     with c1:
         if st.button("🚨 Scam: ₹1,499 Fee + WhatsApp", use_container_width=True):
@@ -834,8 +835,10 @@ with tab_analyzer:
                 submit_text = st.form_submit_button("🔍 Run Full Multi-Agent Investigation", type="primary", use_container_width=True)
             with sub_c2:
                 st.caption("🛡️ Data Privacy: Analyzed locally on system, audited in local SQLite database, sanitized via guardrails.")
-        if submit_text:
-            cleaned_jd = jd_text.strip()
+        if submit_text or st.session_state.get("auto_submit"):
+            st.session_state["auto_submit"] = False
+            raw_text = jd_text if submit_text else st.session_state.get("jd_input", "")
+            cleaned_jd = raw_text.strip()
             if len(cleaned_jd) < 25:
                 st.warning("⚠️ Please paste a complete job posting (at least 25 characters) to perform analysis.")
             else:

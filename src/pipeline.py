@@ -219,10 +219,22 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
         f_probe = executor.submit(_run_probe)
         f_search = executor.submit(_run_search)
 
-        dns_task_res = f_dns.result()
-        rdap_task_res = f_rdap.result()
-        probe_task_res = f_probe.result()
-        search_task_res = f_search.result()
+        try:
+            dns_task_res = f_dns.result(timeout=5.0)
+        except Exception:
+            dns_task_res = None
+        try:
+            rdap_task_res = f_rdap.result(timeout=5.0)
+        except Exception:
+            rdap_task_res = None
+        try:
+            probe_task_res = f_probe.result(timeout=5.0)
+        except Exception:
+            probe_task_res = None
+        try:
+            search_task_res = f_search.result(timeout=5.0)
+        except Exception:
+            search_task_res = None
 
     if domain_to_check:
         company_check.domain = domain_to_check
