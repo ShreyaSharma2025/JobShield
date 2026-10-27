@@ -59,10 +59,13 @@ def fetch_job_from_url(url: str, timeout_seconds: float = 8.0) -> dict:
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
+            "Chrome/126.0.0.0 Safari/537.36"
         ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
+        "Sec-Ch-Ua": '"Not/A)Brand";v="8", "Chromium";v="126", "Google Chrome";v="126"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
     }
 
     try:
@@ -96,6 +99,17 @@ def fetch_job_from_url(url: str, timeout_seconds: float = 8.0) -> dict:
 
     # Parse and extract text using BeautifulSoup
     try:
+        # Check if content is plain text / markdown
+        content_type = resp.headers.get("content-type", "").lower()
+        if "text/plain" in content_type or "text/markdown" in content_type:
+            return {
+                "success": True,
+                "text": html.strip(),
+                "title": clean_url.rsplit("/", 1)[-1] or "Document",
+                "url": clean_url,
+                "error": None,
+            }
+
         soup = BeautifulSoup(html, "html.parser")
 
         # Extract title
@@ -134,14 +148,16 @@ def fetch_job_from_url(url: str, timeout_seconds: float = 8.0) -> dict:
         for p in target.find_all(["h1", "h2", "h3", "h4", "p", "li", "tr", "div"]):
             txt = p.get_text(separator=" ", strip=True)
             if txt and len(txt) > 2:
-                # Avoid duplicate nested text lines
                 if not lines or lines[-1] != txt:
                     lines.append(txt)
 
-        if not lines:
-            raw_text = target.get_text(separator="\n", strip=True)
-        else:
+        if len(lines) >= 3:
             raw_text = "\n".join(lines)
+        else:
+            raw_text = target.get_text(separator="\n", strip=True)
+
+        if not raw_text or len(raw_text.strip()) < 30:
+            raw_text = soup.get_text(separator="\n", strip=True)
 
         # Clean excess blank lines
         clean_text = re.sub(r"\n{3,}", "\n\n", raw_text).strip()
