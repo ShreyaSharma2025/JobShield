@@ -17,5 +17,7 @@ logs/
 *.pdf
 *.html
 *.png
+!docs/*.pdf
+!docs/*.png
 scratch/
 test_results*.json
