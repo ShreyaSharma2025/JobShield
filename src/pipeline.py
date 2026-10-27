@@ -128,7 +128,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
                 resp = httpx.get(
                     target_live,
                     headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
-                    timeout=2.0,
+                    timeout=5.0,
                     follow_redirects=True,
                 )
                 return {"target": target_live, "resp": resp}

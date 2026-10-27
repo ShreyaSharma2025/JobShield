@@ -14,4 +14,6 @@ data/*_postings.csv
 .env.*
 !.env.example
 logs/
-
+*.pdf
+scratch/
+test_results*.json

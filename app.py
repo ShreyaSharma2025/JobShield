@@ -14,6 +14,7 @@ import streamlit as st
 from src.pipeline import analyze_posting
 from src.schemas import AnalysisResult
 from src.guardrails import inspect_guardrails, check_prompt_injection, check_toxic_abusive
+from src.policy import calculate_risk_score
 from src.storage import (
     init_db,
     authenticate_user,
@@ -870,15 +871,14 @@ with tab_analyzer:
     if res:
         st.markdown("<br>", unsafe_allow_html=True)
         category = res.decision.category
+        # Dynamic risk score computed from actual evidence severity and company verification
+        score_val = calculate_risk_score(res.evidence, res.company_check)
         if category == "High Risk":
             badge_html = '<div class="badge-high">🔴 HIGH RISK</div>'
-            score_val = 88
         elif category == "Needs Verification":
             badge_html = '<div class="badge-needs">🟡 NEEDS VERIFICATION</div>'
-            score_val = 50
         else:
             badge_html = '<div class="badge-low">🟢 LOW RISK</div>'
-            score_val = 15
 
         res_c1, res_c2 = st.columns([1.2, 2.5], gap="medium")
         with res_c1:
@@ -1349,9 +1349,66 @@ with tab_architecture:
 
     st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("### 🧩 Visual Dataflow Diagram")
+
+    # Theme-adaptive styling for Mermaid diagram (ensuring arrows are razor-sharp in dark mode)
+    arrow_color = "#4ADE80" if is_dark else "#1E6B38"
+    node_bg = "#18231C" if is_dark else "#FFFFFF"
+    node_border = "#2E9B4E" if is_dark else "#1E6B38"
+    node_text = "#F3F4F6" if is_dark else "#141A16"
+    theme_name = "dark" if is_dark else "default"
+
+    # Inject CSS targeting Streamlit's SVG rendering to guarantee arrow & arrowhead visibility
     st.markdown(
-        """
+        f"""
+        <style>
+          [data-testid="stMarkdownContainer"] svg .edgePath path,
+          [data-testid="stMarkdownContainer"] svg path.path,
+          [data-testid="stMarkdownContainer"] svg .flowchart-link,
+          [data-testid="stMarkdownContainer"] svg .edgePaths path {{
+            stroke: {arrow_color} !important;
+            stroke-width: 2.5px !important;
+          }}
+          [data-testid="stMarkdownContainer"] svg marker path,
+          [data-testid="stMarkdownContainer"] svg defs marker path,
+          [data-testid="stMarkdownContainer"] svg #arrowhead path,
+          [data-testid="stMarkdownContainer"] svg [id*="arrowhead"] path,
+          [data-testid="stMarkdownContainer"] svg [id*="pointEnd"] path {{
+            fill: {arrow_color} !important;
+            stroke: {arrow_color} !important;
+          }}
+          [data-testid="stMarkdownContainer"] svg .node rect,
+          [data-testid="stMarkdownContainer"] svg .node polygon,
+          [data-testid="stMarkdownContainer"] svg .node circle {{
+            fill: {node_bg} !important;
+            stroke: {node_border} !important;
+            stroke-width: 1.5px !important;
+          }}
+          [data-testid="stMarkdownContainer"] svg .node .label,
+          [data-testid="stMarkdownContainer"] svg .node foreignObject span,
+          [data-testid="stMarkdownContainer"] svg .node text {{
+            fill: {node_text} !important;
+            color: {node_text} !important;
+            font-weight: 600 !important;
+          }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
         ```mermaid
+        %%{{init: {{
+          'theme': '{theme_name}',
+          'themeVariables': {{
+            'lineColor': '{arrow_color}',
+            'arrowheadColor': '{arrow_color}',
+            'primaryColor': '{node_bg}',
+            'primaryTextColor': '{node_text}',
+            'primaryBorderColor': '{node_border}',
+            'edgeLabelBackground': '{node_bg}'
+          }}
+        }}}}%%
         graph TD
           JD[User Pastes Job Description] --> G[Guardrails & Prompt-Injection Shield]
           G --> F[CrewAI Flow: ReviewState Initialized]
@@ -1370,6 +1427,9 @@ with tab_architecture:
           POL --> RES[Pydantic Structured Output: AnalysisResult]
           RES --> SQL[(SQLite Audit Database)]
           RES --> UI[Streamlit Interactive Dashboard]
+
+          classDef default fill:{node_bg},stroke:{node_border},stroke-width:1.5px,color:{node_text};
+          linkStyle default stroke:{arrow_color},stroke-width:2.5px;
         ```
         """
     )
