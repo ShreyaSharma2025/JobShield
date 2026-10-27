@@ -1,4 +1,4 @@
-"""Entry point used by Streamlit to run one posting review."""
+import os
 from time import perf_counter
 from uuid import uuid4
 from .parser import parse_posting
@@ -11,15 +11,15 @@ from .guardrails import validate_posting_text
 
 def analyze_posting(text: str) -> AnalysisResult:
     text = validate_posting_text(text)
+    # Default to deterministic pipeline unless CrewAI agent mode is explicitly turned on
+    if os.getenv("CREWAI_AGENT_ENABLED", "false").lower() != "true":
+        return _analyze_without_crewai(text)
     try:
         from .flow import JobReviewFlow
-    except ModuleNotFoundError as error:
-        if error.name not in {"crewai", "dotenv"}:
-            raise
+        review = JobReviewFlow(text)
+        return review.kickoff()
+    except Exception:
         return _analyze_without_crewai(text)
-
-    review = JobReviewFlow(text)
-    return review.kickoff()
 
 
 def _analyze_without_crewai(text: str) -> AnalysisResult:
