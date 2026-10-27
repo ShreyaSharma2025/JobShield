@@ -51,6 +51,24 @@ def analyze_posting(text: str) -> AnalysisResult:
         return _analyze_without_crewai(text)
 
 
+def analyze_url(url: str) -> AnalysisResult:
+    """Fetch job posting from web URL and run full multi-agent risk screening."""
+    from .ingestion import fetch_job_from_url
+    res = fetch_job_from_url(url)
+    if not res["success"]:
+        raise ValueError(res["error"])
+    return analyze_posting(res["text"])
+
+
+def analyze_document(file_bytes: bytes, filename: str) -> AnalysisResult:
+    """Extract job posting from uploaded PDF, Word (.docx), or text document and run screening."""
+    from .ingestion import extract_text_from_document
+    res = extract_text_from_document(file_bytes, filename)
+    if not res["success"]:
+        raise ValueError(res["error"])
+    return analyze_posting(res["text"])
+
+
 # ====================================================================================================
 # [PORTION: DETERMINISTIC MULTI-AGENT EXECUTION PIPELINE]
 # Function: _analyze_without_crewai(text: str) -> AnalysisResult

@@ -11,10 +11,11 @@ import time
 from pathlib import Path
 import streamlit as st
 
-from src.pipeline import analyze_posting
+from src.pipeline import analyze_posting, analyze_url, analyze_document
 from src.schemas import AnalysisResult
 from src.guardrails import inspect_guardrails, check_prompt_injection, check_toxic_abusive
 from src.policy import calculate_risk_score
+from src.ingestion import fetch_job_from_url, extract_text_from_document, is_safe_url
 from src.storage import (
     init_db,
     authenticate_user,
@@ -724,11 +725,13 @@ with col_nav_meta:
 with col_nav_ctrl:
     col_u, col_t, col_o = st.columns([1.2, 1.1, 1.1], gap="small")
     with col_u:
+        user_name = user['name'] if user and isinstance(user, dict) else "Guest User"
+        user_email = user['email'] if user and isinstance(user, dict) else "Local Session"
         st.markdown(
             f"""
             <div style="font-size: 0.8rem; text-align: right; line-height: 1.25; padding-top: 0.35rem;">
-              <strong style="color: var(--text-primary);">👤 {user['name']}</strong><br>
-              <span style="color: var(--text-muted); font-size: 0.72rem;">{user['email']}</span>
+              <strong style="color: var(--text-primary);">👤 {user_name}</strong><br>
+              <span style="color: var(--text-muted); font-size: 0.72rem;">{user_email}</span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -807,26 +810,95 @@ with tab_analyzer:
             if "LEGIT_IN_005" in samples:
                 set_sample(samples["LEGIT_IN_005"]["description"])
 
-    # Job Description Form
-    with st.form("jd_form"):
-        jd_text = st.text_area(
-            "Job Description / Internship Offer Notice",
-            value=st.session_state["jd_input"],
-            height=180,
-            placeholder="Paste complete job notice here (including company name, role, salary, contact email/phone, and instructions)...",
-            help="Raw text is checked against input guardrails, token bounds, and prompt-injection detectors before agent processing.",
-        )
-        sub_c1, sub_c2 = st.columns([1.2, 3])
-        with sub_c1:
-            submitted = st.form_submit_button("🔍 Run Full Multi-Agent Investigation", type="primary", use_container_width=True)
-        with sub_c2:
-            st.caption("🛡️ Data Privacy: Analyzed locally on system, audited in local SQLite database, sanitized via guardrails.")
+    # Multi-Option Job Notice Ingestion: Text, Web URL, or Uploaded Document
+    submitted = False
+    cleaned_jd = ""
 
-    if submitted:
-        cleaned_jd = jd_text.strip()
-        if len(cleaned_jd) < 25:
-            st.warning("⚠️ Please paste a complete job posting (at least 25 characters) to perform analysis.")
-        else:
+    input_tab1, input_tab2, input_tab3 = st.tabs([
+        "📝 Paste Text Notice",
+        "🔗 Scan via Web URL",
+        "📄 Upload Document (PDF / Word / TXT)"
+    ])
+
+    with input_tab1:
+        with st.form("jd_text_form"):
+            jd_text = st.text_area(
+                "Job Description / Internship Offer Notice",
+                value=st.session_state["jd_input"],
+                height=180,
+                placeholder="Paste complete job notice here (including company name, role, salary, contact email/phone, and instructions)...",
+                help="Raw text is checked against input guardrails, token bounds, and prompt-injection detectors before agent processing.",
+            )
+            sub_c1, sub_c2 = st.columns([1.2, 3])
+            with sub_c1:
+                submit_text = st.form_submit_button("🔍 Run Full Multi-Agent Investigation", type="primary", use_container_width=True)
+            with sub_c2:
+                st.caption("🛡️ Data Privacy: Analyzed locally on system, audited in local SQLite database, sanitized via guardrails.")
+        if submit_text:
+            cleaned_jd = jd_text.strip()
+            if len(cleaned_jd) < 25:
+                st.warning("⚠️ Please paste a complete job posting (at least 25 characters) to perform analysis.")
+            else:
+                submitted = True
+                st.session_state["jd_input"] = cleaned_jd
+
+    with input_tab2:
+        st.markdown('<p style="font-size: 0.88rem; font-weight: 600; color: var(--text-primary); margin-top: 0.3rem; margin-bottom: 0.3rem;">🌐 Enter Job Notice / Careers Portal Web URL:</p>', unsafe_allow_html=True)
+        url_input = st.text_input(
+            "Job Posting URL",
+            placeholder="e.g. https://careers.swiggy.com/jobs/sde or https://www.linkedin.com/jobs/view/...",
+            help="Fetches live HTML, sanitizes noise (scripts, ads, navigation), extracts job requirements, and applies SSRF security checks.",
+            label_visibility="collapsed"
+        )
+        url_c1, url_c2 = st.columns([1.3, 3])
+        with url_c1:
+            fetch_url_btn = st.button("🔍 Fetch URL & Run Investigation", type="primary", use_container_width=True, key="fetch_url_btn")
+        with url_c2:
+            st.caption("🛡️ SSRF Guardrail Active: Private IPs, localhost, and non-HTTP(S) addresses are strictly blocked.")
+
+        if fetch_url_btn:
+            if not url_input.strip():
+                st.warning("⚠️ Please enter a valid job posting web URL.")
+            else:
+                with st.spinner(f"📡 Querying and extracting content from `{url_input.strip()}`..."):
+                    fetch_res = fetch_job_from_url(url_input.strip())
+                if not fetch_res["success"]:
+                    st.error(f"❌ Failed to extract job posting: {fetch_res['error']}")
+                else:
+                    st.success(f"✅ Successfully retrieved **{fetch_res['title'] or 'Job Notice'}** ({len(fetch_res['text']):,} characters extracted)!")
+                    with st.expander("👁️ View Extracted Web Text Preview", expanded=False):
+                        st.text(fetch_res["text"][:1200] + ("..." if len(fetch_res["text"]) > 1200 else ""))
+                    submitted = True
+                    cleaned_jd = fetch_res["text"].strip()
+                    st.session_state["jd_input"] = cleaned_jd
+
+    with input_tab3:
+        st.markdown('<p style="font-size: 0.88rem; font-weight: 600; color: var(--text-primary); margin-top: 0.3rem; margin-bottom: 0.3rem;">📄 Upload Job Description / Offer Letter Document:</p>', unsafe_allow_html=True)
+        uploaded_doc = st.file_uploader(
+            "Upload Document",
+            type=["pdf", "docx", "doc", "txt"],
+            help="Upload an official job description or offer letter in PDF, Word (.docx), or plain text format.",
+            label_visibility="collapsed"
+        )
+        if uploaded_doc is not None:
+            doc_c1, doc_c2 = st.columns([1.3, 3])
+            with doc_c1:
+                parse_doc_btn = st.button("🔍 Extract Document & Run Investigation", type="primary", use_container_width=True, key="parse_doc_btn")
+            with doc_c2:
+                st.caption(f"📎 File: `{uploaded_doc.name}` ({round(len(uploaded_doc.getvalue())/1024, 1)} KB · Ready to scan)")
+
+            if parse_doc_btn:
+                with st.spinner(f"📑 Parsing document text from `{uploaded_doc.name}`..."):
+                    doc_res = extract_text_from_document(uploaded_doc.getvalue(), uploaded_doc.name)
+                if not doc_res["success"]:
+                    st.error(f"❌ Failed to parse document: {doc_res['error']}")
+                else:
+                    st.success(f"✅ Extracted **{doc_res['char_count']:,} characters** from `{uploaded_doc.name}`!")
+                    with st.expander("👁️ View Extracted Document Preview", expanded=False):
+                        st.text(doc_res["text"][:1200] + ("..." if len(doc_res["text"]) > 1200 else ""))
+                    submitted = True
+                    cleaned_jd = doc_res["text"].strip()
+                    st.session_state["jd_input"] = cleaned_jd
             # Fast pre-parse for live animation
             from src.parser import parse_posting
             pre_parsed = parse_posting(cleaned_jd)
