@@ -67,7 +67,8 @@ def validate_posting_text(text: str) -> str:
     if len(clean_text) < MIN_POSTING_CHARACTERS:
         raise ValueError(f"Paste a fuller job description (at least {MIN_POSTING_CHARACTERS} characters).")
     if len(clean_text) > MAX_POSTING_CHARACTERS:
-        raise ValueError(f"The job description is too long. The limit is {MAX_POSTING_CHARACTERS:,} characters.")
+        # Gracefully clamp long inputs to maximum character bound to preserve continuity
+        clean_text = clean_text[:MAX_POSTING_CHARACTERS]
     if "\x00" in clean_text:
         raise ValueError("The job description contains an invalid null character. Please paste plain text.")
 

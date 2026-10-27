@@ -899,48 +899,50 @@ with tab_analyzer:
                     submitted = True
                     cleaned_jd = doc_res["text"].strip()
                     st.session_state["jd_input"] = cleaned_jd
-            # Fast pre-parse for live animation
-            from src.parser import parse_posting
-            pre_parsed = parse_posting(cleaned_jd)
-            target_comp = pre_parsed.company_name or "Unspecified Entity"
-            target_domain = ""
-            if pre_parsed.contact_email and "@" in pre_parsed.contact_email:
-                target_domain = pre_parsed.contact_email.rsplit("@", 1)[-1].lower()
-            elif pre_parsed.links:
-                dm = re.search(r"https?://(?:www\.)?([^/:\s]+)", pre_parsed.links[0])
-                if dm:
-                    target_domain = dm.group(1).lower()
 
-            # ============================================================================================
-            # [NODE 9: INTERACTIVE STREAMLIT UI PRESENTATION LAYER]
-            # PORTION 9.1: Live Agent Investigation Progress Box (Tracking Nodes 1 through 7)
-            # ============================================================================================
-            with st.status("🔍 Live Multi-Agent Autonomous Investigation in Progress...", expanded=True) as status_box:
-                st.write(f"📝 **Step 1/6 · Posting Parser Agent (CrewAI):** Extracted Target Entity: **{target_comp}** | Role: **{pre_parsed.role or 'Unspecified'}** | Email/Channel: `{pre_parsed.contact_email or 'None'}`")
-                st.write("🧭 **Step 2/6 · Coordinator & Planner Agent (CrewAI Flow):** Assembled shared Pydantic `ReviewState`, formulated dynamic routing path across Red-Flag Rules, FAISS Vector Index, and Google ADK Verifier...")
-                st.write("🚩 **Step 3/6 · Red-Flag Detection Agent (CrewAI):** Scanning text against deterministic indicators: upfront fee demands, WhatsApp/Telegram recruiters, credential harvesting...")
-                st.write("📊 **Step 4/6 · Historical Similarity Agent (FAISS):** Generating dense semantic embedding & comparing against EMSCAD training index...")
-                st.write(f"🌐 **Step 5/6 · Company Verification Agent (Google ADK via A2A):** Connecting to FastMCP tools (DNS, RDAP, and Web Search in parallel):")
-                if target_domain:
-                    st.write(f"   ↳ 📡 Querying DNS host nameservers & ICANN RDAP for `{target_domain}`...")
-                if pre_parsed.company_name:
-                    st.write(f"   ↳ 🔎 Executing Live Web Search for `\"{pre_parsed.company_name} careers official site\"`...")
+    if submitted and cleaned_jd:
+        # Fast pre-parse for live animation
+        from src.parser import parse_posting
+        pre_parsed = parse_posting(cleaned_jd)
+        target_comp = pre_parsed.company_name or "Unspecified Entity"
+        target_domain = ""
+        if pre_parsed.contact_email and "@" in pre_parsed.contact_email:
+            target_domain = pre_parsed.contact_email.rsplit("@", 1)[-1].lower()
+        elif pre_parsed.links:
+            dm = re.search(r"https?://(?:www\.)?([^/:\s]+)", pre_parsed.links[0])
+            if dm:
+                target_domain = dm.group(1).lower()
 
-                # Execute pipeline concurrently through Node 0 to Node 8
-                try:
-                    analysis_res = analyze_posting(cleaned_jd)
-                    st.session_state["last_analysis"] = analysis_res
-                except Exception as e:
-                    st.error(f"Error during analysis: {e}")
-                    st.stop()
+        # ============================================================================================
+        # [NODE 9: INTERACTIVE STREAMLIT UI PRESENTATION LAYER]
+        # PORTION 9.1: Live Agent Investigation Progress Box (Tracking Nodes 1 through 7)
+        # ============================================================================================
+        with st.status("🔍 Live Multi-Agent Autonomous Investigation in Progress...", expanded=True) as status_box:
+            st.write(f"📝 **Step 1/6 · Posting Parser Agent (CrewAI):** Extracted Target Entity: **{target_comp}** | Role: **{pre_parsed.role or 'Unspecified'}** | Email/Channel: `{pre_parsed.contact_email or 'None'}`")
+            st.write("🧭 **Step 2/6 · Coordinator & Planner Agent (CrewAI Flow):** Assembled shared Pydantic `ReviewState`, formulated dynamic routing path across Red-Flag Rules, FAISS Vector Index, and Google ADK Verifier...")
+            st.write("🚩 **Step 3/6 · Red-Flag Detection Agent (CrewAI):** Scanning text against deterministic indicators: upfront fee demands, WhatsApp/Telegram recruiters, credential harvesting...")
+            st.write("📊 **Step 4/6 · Historical Similarity Agent (FAISS):** Generating dense semantic embedding & comparing against EMSCAD training index...")
+            st.write(f"🌐 **Step 5/6 · Company Verification Agent (Google ADK via A2A):** Connecting to FastMCP tools (DNS, RDAP, and Web Search in parallel):")
+            if target_domain:
+                st.write(f"   ↳ 📡 Querying DNS host nameservers & ICANN RDAP for `{target_domain}`...")
+            if pre_parsed.company_name:
+                st.write(f"   ↳ 🔎 Executing Live Web Search for `\"{pre_parsed.company_name} careers official site\"`...")
 
-                st.write(f"⚖️ **Step 6/6 · Evidence & Verdict Arbiter:** Evidence synthesized across all specialist agents -> Final Risk Verdict: **{analysis_res.decision.category}**")
+            # Execute pipeline concurrently through Node 0 to Node 8
+            try:
+                analysis_res = analyze_posting(cleaned_jd)
+                st.session_state["last_analysis"] = analysis_res
+            except Exception as e:
+                st.error(f"Error during analysis: {e}")
+                st.stop()
 
-                status_box.update(
-                    label=f"✅ Multi-Agent Investigation Complete · Final Verdict: {analysis_res.decision.category} ({len(analysis_res.company_check.queried_sites)} External Sites Verified in {analysis_res.duration_seconds}s)",
-                    state="complete",
-                    expanded=True,
-                )
+            st.write(f"⚖️ **Step 6/6 · Evidence & Verdict Arbiter:** Evidence synthesized across all specialist agents -> Final Risk Verdict: **{analysis_res.decision.category}**")
+
+            status_box.update(
+                label=f"✅ Multi-Agent Investigation Complete · Final Verdict: {analysis_res.decision.category} ({len(analysis_res.company_check.queried_sites)} External Sites Verified in {analysis_res.duration_seconds}s)",
+                state="complete",
+                expanded=True,
+            )
 
     # ============================================================================================
     # PORTION 9.2: Risk Score & Categorical Verdict Display

@@ -121,6 +121,14 @@ def fetch_job_from_url(url: str, timeout_seconds: float = 8.0) -> dict:
         for element in soup(["script", "style", "nav", "footer", "header", "aside", "noscript", "iframe", "svg"]):
             element.decompose()
 
+        # Remove dialogs, modals, popups, and hidden elements (e.g. login walls, account hold warnings, cookie banners)
+        for el in soup.select(
+            '.modal, [role="dialog"], [aria-modal="true"], .login-modal, .register-modal, '
+            '[style*="display: none"], [style*="display:none"], [hidden], [aria-hidden="true"], '
+            '.toast, .alert-dismissible, .cookie-banner, .popup, .overlay'
+        ):
+            el.decompose()
+
         # Check for focused job content containers first
         content_container = None
         selectors = [
@@ -129,8 +137,20 @@ def fetch_job_from_url(url: str, timeout_seconds: float = 8.0) -> dict:
             'div[class*="job_description"]',
             'div[class*="posting-requirements"]',
             'div[class*="job-details"]',
+            'div[class*="jobDetails"]',
             'div[id*="job-description"]',
             'div[id*="jobDescription"]',
+            'div[class*="detail_view"]',
+            '.detail_view',
+            'div[class*="internship_details"]',
+            '.internship_details',
+            '#jobDescriptionText',             # Indeed
+            '.jobs-description__content',      # LinkedIn
+            '.show-more-less-html__markup',    # LinkedIn public
+            '.job-desc-section',               # Naukri
+            '.jobDescriptionContent',          # Glassdoor
+            '.posting-content',                # Lever
+            '#content',                        # Greenhouse / general
             'article',
             'main',
             '[role="main"]',
@@ -161,6 +181,10 @@ def fetch_job_from_url(url: str, timeout_seconds: float = 8.0) -> dict:
 
         # Clean excess blank lines
         clean_text = re.sub(r"\n{3,}", "\n\n", raw_text).strip()
+
+        # Cap text to 20,000 characters to ensure safe downstream agent processing
+        if len(clean_text) > 20000:
+            clean_text = clean_text[:20000].rsplit("\n", 1)[0].strip()
 
         if len(clean_text) < 40:
             return {

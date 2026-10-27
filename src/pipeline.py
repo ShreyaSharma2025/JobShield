@@ -236,8 +236,12 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
             company_check.dns_status = f"Active DNS host (IP: {', '.join(ips[:2])})"
             company_check.findings.append(f"Domain '{domain_to_check}' resolves to active host servers.")
             dns_summary = f"Resolves to active IP(s): {', '.join(ips[:2])}"
-            dns_signal = "Genuine Signal"
-            dns_why = f"Domain '{domain_to_check}' has valid A/AAAA DNS records, confirming an active network presence."
+            if domain_to_check in free_mail_providers:
+                dns_signal = "Neutral / Needs Verification"
+                dns_why = f"Domain '{domain_to_check}' is a public webmail provider. Its DNS resolution confirms public mail servers exist, but does not verify the hiring entity's legitimacy."
+            else:
+                dns_signal = "Genuine Signal"
+                dns_why = f"Domain '{domain_to_check}' has valid A/AAAA DNS records, confirming an active enterprise network presence."
         else:
             company_check.dns_status = "Unresolved or inactive domain"
             company_check.findings.append(f"Domain '{domain_to_check}' failed host DNS resolution.")
@@ -249,7 +253,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
             "site_name": "Active DNS Nameserver Resolution",
             "url": f"dns://{domain_to_check}",
             "service_type": "Host Server & Nameserver Infrastructure",
-            "status": "Resolved" if dns_signal == "Genuine Signal" else "Failed",
+            "status": "Resolved" if dns_task_res and dns_task_res.get("status") == "resolved" else "Failed",
             "result_summary": dns_summary,
             "verdict_signal": dns_signal,
             "rationale": dns_why,
@@ -357,8 +361,16 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
                 if hit.get("url") and hit["url"] not in company_check.sources:
                     company_check.sources.append(hit["url"])
             search_summary = f"Found: '{first_hit.get('title', '')}' -> {first_hit.get('url', '')}"
-            search_signal = "Genuine Signal" if not (domain_to_check in free_mail_providers and is_major_brand) else "Suspicious / Scam Signal"
-            search_why = f"Search confirmed legitimate corporate career portals exist at {first_hit.get('url', '')}."
+            if domain_to_check in free_mail_providers:
+                if is_major_brand:
+                    search_signal = "Suspicious / Scam Signal"
+                    search_why = f"Recruiter claims to represent established corporation '{clean_comp}', but is operating through an unverified personal @{domain_to_check} address."
+                else:
+                    search_signal = "Neutral / Needs Verification"
+                    search_why = f"Discovered external references for '{clean_comp}', but recruiter uses a free webmail (@{domain_to_check}) rather than an authenticated corporate domain."
+            else:
+                search_signal = "Genuine Signal"
+                search_why = f"Search confirmed legitimate corporate career portals exist at {first_hit.get('url', '')}."
         else:
             search_summary = f"No authoritative career portal found for '{clean_comp}'"
             search_signal = "Neutral / Needs Verification"
