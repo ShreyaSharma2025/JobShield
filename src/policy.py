@@ -2,22 +2,20 @@
 # [NODE 7 / AGENT 6: DETERMINISTIC POLICY ARBITER & DYNAMIC RISK SCORING ENGINE]
 # File: src/policy.py
 #
+# QUICK NODE TO STARTING LINE MAPPING:
+#   - [NODE 7 / AGENT 6 · L27] : Decision Arbiter Categorization Engine (calculate_decision)
+#   - [NODE 7 / AGENT 6 · L160]: Dynamic 0-100 Numerical Risk Score Engine (calculate_risk_score)
+#
 # ARCHITECTURAL ROLE:
 #   This module performs final evidence synthesis and mathematical risk scoring across all
 #   upstream agent findings (Node 2 Parser, Node 4 Red Flags, Node 5 FAISS, Node 6 FastMCP Verifier).
-#
-# CODE PORTION BREAKDOWN:
-#   - PORTION 1 (Lines 28 to 110): Deterministic Categorical Verdict Engine (`calculate_decision`)
-#     Evaluates prioritized decision-tree branches to assign: "High Risk", "Needs Verification", or "Low Risk".
-#   - PORTION 2 (Lines 113 to 155): Dynamic 0-100 Numerical Risk Scoring Engine (`calculate_risk_score`)
-#     Calculates the weighted risk severity score based on rule severity and external domain verification.
 # ====================================================================================================
 
 from .schemas import CompanyCheck, Evidence, RiskDecision
 
 
 # ====================================================================================================
-# [PORTION 1: DETERMINISTIC CATEGORICAL VERDICT ENGINE (Lines 28 to 110)]
+# [NODE 7 / AGENT 6 · PORTION 1 · L27: DETERMINISTIC CATEGORICAL VERDICT ENGINE]
 # Function: calculate_decision(evidence, company_check) -> RiskDecision
 #
 # Purpose:
@@ -143,7 +141,7 @@ def calculate_decision(evidence: list[Evidence], company_check: CompanyCheck | N
 
 
 # ====================================================================================================
-# [PORTION 2: DYNAMIC 0–100 RISK SCORE & WEIGHTAGE ENGINE (Lines 113 to 155)]
+# [NODE 7 / AGENT 6 · PORTION 2 · L160: DYNAMIC 0–100 RISK SCORE & WEIGHTAGE ENGINE]
 # Function: calculate_risk_score(evidence, company_check) -> int (0 to 100)
 #
 # POINT WEIGHTAGE ALLOCATION SYSTEM:

@@ -2,13 +2,14 @@
 # [NODE 0: PRE-FLIGHT INPUT GUARDRAILS SHIELD & SECURITY VALIDATOR]
 # File: src/guardrails.py
 #
+# QUICK NODE TO STARTING LINE MAPPING:
+#   - [NODE 0 · L43] : Anti-Prompt Injection Defense (check_prompt_injection)
+#   - [NODE 0 · L53] : Malicious Payload Scanner (check_toxic_abusive)
+#   - [NODE 0 · L63] : Input Text Boundary & Null Byte Clearance (validate_posting_text)
+#   - [NODE 0 · L81] : FastMCP Tool Return Defense Checks (validate_tool_return)
+#
 # ARCHITECTURAL ROLE:
 #   First line of defense. Runs before any agent processes untrusted user input.
-#
-# CODE PORTIONS:
-#   - PORTION 1 (Lines 20-55): Anti-Prompt Injection & Content Abuse Scanner
-#   - PORTION 2 (Lines 58-80): Text Boundary & Null Byte Clearance (`validate_posting_text`)
-#   - PORTION 3 (Lines 83-140): Tool Return & Schema Defense Checks (`validate_tool_return`)
 # ====================================================================================================
 
 import re
@@ -37,6 +38,7 @@ ABUSE_PATTERNS = [
 ]
 
 
+# [NODE 0 · PORTION 1 · L43: ANTI-PROMPT INJECTION DEFENSE]
 def check_prompt_injection(text: str) -> tuple[bool, str | None]:
     """Scan text for prompt injection attempts attempting to compromise agentic flow."""
     lower = text.lower()
@@ -47,6 +49,7 @@ def check_prompt_injection(text: str) -> tuple[bool, str | None]:
     return False, None
 
 
+# [NODE 0 · PORTION 1 · L53: MALICIOUS PAYLOAD SCANNER]
 def check_toxic_abusive(text: str) -> tuple[bool, str | None]:
     """Scan text for abusive or malicious payloads."""
     lower = text.lower()
@@ -57,6 +60,7 @@ def check_toxic_abusive(text: str) -> tuple[bool, str | None]:
     return False, None
 
 
+# [NODE 0 · PORTION 2 · L63: INPUT TEXT BOUNDARY & NULL BYTE CLEARANCE]
 def validate_posting_text(text: str) -> str:
     """Validate input text size, character validity, and security clearance."""
     clean_text = text.strip()

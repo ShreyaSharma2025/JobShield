@@ -2,17 +2,18 @@
 # [JOBSHIELD MULTI-AGENT ORCHESTRATION PIPELINE]
 # File: src/pipeline.py
 #
-# SEQUENTIAL NODE ARCHITECTURE OVERVIEW:
-#   - [NODE 0]: Pre-Flight Input Guardrails Shield (validate_posting_text, anti-injection, length/charset)
-#   - [NODE 1]: Flow Context Engine & State Container (JobReviewFlow / _analyze_without_crewai)
-#   - [NODE 2 / AGENT 1]: Posting Parser Specialist Agent (parse_posting - entity, email, salary, links)
-#   - [NODE 3 / AGENT 2]: Coordinator & Routing Planner (Dynamic investigation DAG formulation)
-#   - [NODE 4 / AGENT 3]: Red-Flag Threat Scanner Agent (detect_red_flags - deterministic rules & regex)
-#   - [NODE 5 / AGENT 4]: Historical FAISS Vector Similarity Agent (EMSCAD nearest-neighbor embeddings)
-#   - [NODE 6 / AGENT 5]: Company Verification Agent & FastMCP Tools (DNS, RDAP, HTTP probe, DuckDuckGo)
-#   - [NODE 7 / AGENT 6]: Deterministic Policy Arbiter & Risk Scoring Engine (calculate_decision, risk_score)
-#   - [NODE 8]: Storage & Observability Audit Layer (save_result to SQLite DB)
-#   - [NODE 9]: Streamlit Interactive UI Presentation Layer (app.py)
+# QUICK NODE TO STARTING LINE MAPPING:
+#   - [NODE 0 · L39] : Pre-Flight Input Guardrails Shield (validate_posting_text)
+#   - [NODE 1 · L45] : Flow Execution Dispatcher (CrewAI / Deterministic switch)
+#   - [NODE 1 · L63] : Deterministic Execution Engine (_analyze_without_crewai)
+#   - [NODE 2 · L70] : Posting Parser Specialist Agent (parse_posting)
+#   - [NODE 3 · L77] : Coordinator & Routing Planner (Dynamic investigation DAG)
+#   - [NODE 4 · L88] : Red-Flag Threat Scanner Agent (detect_red_flags)
+#   - [NODE 5 · L96] : Historical FAISS Vector Similarity Agent (search_similar_postings)
+#   - [NODE 6 · L119]: Company Verification Agent & FastMCP Tools (DNS, RDAP, HTTP Probe, DuckDuckGo)
+#   - [NODE 7 · L416]: Deterministic Policy Arbiter & Risk Scoring (calculate_decision, calculate_risk_score)
+#   - [NODE 8 · L437]: Persistence & SQLite Audit Database Layer (save_result)
+#   - [NODE 9 · L842 in app.py]: Streamlit UI Presentation Layer (Live status box & score badge)
 # ====================================================================================================
 
 import os
@@ -31,13 +32,13 @@ from .guardrails import validate_posting_text
 # ====================================================================================================
 def analyze_posting(text: str) -> AnalysisResult:
     # ------------------------------------------------------------------------------------------------
-    # [NODE 0: PRE-FLIGHT INPUT GUARDRAILS SHIELD]
+    # [NODE 0 · L39: PRE-FLIGHT INPUT GUARDRAILS SHIELD]
     # Scans for prompt injection attacks, payload exploits, null characters, and character boundaries.
     # ------------------------------------------------------------------------------------------------
     text = validate_posting_text(text)
 
     # ------------------------------------------------------------------------------------------------
-    # [NODE 1: FLOW EXECUTION DISPATCHER]
+    # [NODE 1 · L45: FLOW EXECUTION DISPATCHER]
     # Selects between CrewAI Flow with LLM agent stack or Deterministic Multi-Agent pipeline.
     # ------------------------------------------------------------------------------------------------
     if os.getenv("CREWAI_AGENT_ENABLED", "false").lower() != "true":
@@ -62,14 +63,14 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     workflow_events: list[str] = []
 
     # ------------------------------------------------------------------------------------------------
-    # [NODE 2 / AGENT 1: POSTING PARSER SPECIALIST AGENT]
+    # [NODE 2 / AGENT 1 · L70: POSTING PARSER SPECIALIST AGENT]
     # Extracts company entity, role, contact channels, links, salary claims, and candidate attributes.
     # ------------------------------------------------------------------------------------------------
     workflow_events.append("1. Posting Parser Agent: Extracted structured fields and candidate attributes.")
     posting = parse_posting(text)
 
     # ------------------------------------------------------------------------------------------------
-    # [NODE 3 / AGENT 2: COORDINATOR & DYNAMIC ROUTING PLANNER]
+    # [NODE 3 / AGENT 2 · L77: COORDINATOR & DYNAMIC ROUTING PLANNER]
     # Inspects extracted metadata and formulates conditional investigation plan (e.g. skip web checks if no company).
     # ------------------------------------------------------------------------------------------------
     investigation_steps = ["Red-Flag Analysis"]
@@ -80,7 +81,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     workflow_events.append(f"2. Coordinator / Investigation Planner: Dynamic plan formulated: {', '.join(investigation_steps)}.")
 
     # ------------------------------------------------------------------------------------------------
-    # [NODE 4 / AGENT 3: RED-FLAG THREAT SCANNER AGENT]
+    # [NODE 4 / AGENT 3 · L88: RED-FLAG THREAT SCANNER AGENT]
     # Executes rule-based scanning for upfront fee demands, sensitive info/OTP requests, WhatsApp/Telegram recruiters.
     # ------------------------------------------------------------------------------------------------
     workflow_events.append("3. Red-Flag Detection Agent: Evaluated rule-based indicators and sensitive patterns.")
@@ -88,7 +89,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     workflow_events.append(f"   -> Identified {len(evidence)} supported evidence finding(s).")
 
     # ------------------------------------------------------------------------------------------------
-    # [NODE 5 / AGENT 4: HISTORICAL FAISS VECTOR SIMILARITY AGENT]
+    # [NODE 5 / AGENT 4 · L96: HISTORICAL FAISS VECTOR SIMILARITY AGENT]
     # Generates dense text embedding and queries FAISS index across labeled fraudulent/legitimate job archives.
     # ------------------------------------------------------------------------------------------------
     similar_postings = []
@@ -111,7 +112,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
 
 
     # ------------------------------------------------------------------------------------------------
-    # [NODE 6 / AGENT 5: COMPANY VERIFICATION AGENT & FASTMCP TOOLS]
+    # [NODE 6 / AGENT 5 · L119: COMPANY VERIFICATION AGENT & FASTMCP TOOLS]
     # Connects to FastMCP tools (DNS, RDAP, HTTP Probe, DuckDuckGo, LinkedIn, MCA India) in parallel.
     # ------------------------------------------------------------------------------------------------
     from .schemas import CompanyCheck
@@ -407,7 +408,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
 
 
     # ------------------------------------------------------------------------------------------------
-    # [NODE 7 / AGENT 6: DETERMINISTIC POLICY ARBITER & DYNAMIC RISK SCORING ENGINE]
+    # [NODE 7 / AGENT 6 · L415: DETERMINISTIC POLICY ARBITER & DYNAMIC RISK SCORING ENGINE]
     # (Code reference: src/policy.py - calculate_decision & calculate_risk_score)
     # Synthesizes all gathered evidence, red flags, and FastMCP registry checks to assign final verdict.
     # ------------------------------------------------------------------------------------------------
@@ -428,7 +429,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     )
 
     # ------------------------------------------------------------------------------------------------
-    # [NODE 8: PERSISTENCE & SQLITE AUDIT DATABASE LAYER]
+    # [NODE 8 · L436: PERSISTENCE & SQLITE AUDIT DATABASE LAYER]
     # (Code reference: src/storage.py - save_result)
     # Records structured analysis outcome, triggered rules, and raw payload into SQLite for auditability.
     # ------------------------------------------------------------------------------------------------
