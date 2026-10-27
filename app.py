@@ -839,6 +839,10 @@ with tab_analyzer:
                 if dm:
                     target_domain = dm.group(1).lower()
 
+            # ============================================================================================
+            # [NODE 9: INTERACTIVE STREAMLIT UI PRESENTATION LAYER]
+            # PORTION 9.1: Live Agent Investigation Progress Box (Tracking Nodes 1 through 7)
+            # ============================================================================================
             with st.status("🔍 Live Multi-Agent Autonomous Investigation in Progress...", expanded=True) as status_box:
                 st.write(f"📝 **Step 1/6 · Posting Parser Agent (CrewAI):** Extracted Target Entity: **{target_comp}** | Role: **{pre_parsed.role or 'Unspecified'}** | Email/Channel: `{pre_parsed.contact_email or 'None'}`")
                 st.write("🧭 **Step 2/6 · Coordinator & Planner Agent (CrewAI Flow):** Assembled shared Pydantic `ReviewState`, formulated dynamic routing path across Red-Flag Rules, FAISS Vector Index, and Google ADK Verifier...")
@@ -850,7 +854,7 @@ with tab_analyzer:
                 if pre_parsed.company_name:
                     st.write(f"   ↳ 🔎 Executing Live Web Search for `\"{pre_parsed.company_name} careers official site\"`...")
 
-                # Execute pipeline concurrently
+                # Execute pipeline concurrently through Node 0 to Node 8
                 try:
                     analysis_res = analyze_posting(cleaned_jd)
                     st.session_state["last_analysis"] = analysis_res
@@ -866,12 +870,15 @@ with tab_analyzer:
                     expanded=True,
                 )
 
-    # Render results if available in session state
+    # ============================================================================================
+    # PORTION 9.2: Risk Score & Categorical Verdict Display
+    # Renders numerical severity score (0-100) calculated by Node 7 (calculate_risk_score in src/policy.py)
+    # ============================================================================================
     res: AnalysisResult = st.session_state.get("last_analysis")
     if res:
         st.markdown("<br>", unsafe_allow_html=True)
         category = res.decision.category
-        # Dynamic risk score computed from actual evidence severity and company verification
+        # Dynamic risk score computed from actual evidence severity and company verification (Node 7)
         score_val = calculate_risk_score(res.evidence, res.company_check)
         if category == "High Risk":
             badge_html = '<div class="badge-high">🔴 HIGH RISK</div>'

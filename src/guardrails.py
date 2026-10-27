@@ -1,4 +1,16 @@
-"""Input, security, and evidence checks that run before results are stored or shown."""
+# ====================================================================================================
+# [NODE 0: PRE-FLIGHT INPUT GUARDRAILS SHIELD & SECURITY VALIDATOR]
+# File: src/guardrails.py
+#
+# ARCHITECTURAL ROLE:
+#   First line of defense. Runs before any agent processes untrusted user input.
+#
+# CODE PORTIONS:
+#   - PORTION 1 (Lines 20-55): Anti-Prompt Injection & Content Abuse Scanner
+#   - PORTION 2 (Lines 58-80): Text Boundary & Null Byte Clearance (`validate_posting_text`)
+#   - PORTION 3 (Lines 83-140): Tool Return & Schema Defense Checks (`validate_tool_return`)
+# ====================================================================================================
+
 import re
 from typing import Any
 from .schemas import Evidence, ParsedPosting

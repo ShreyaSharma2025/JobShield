@@ -1,3 +1,20 @@
+# ====================================================================================================
+# [JOBSHIELD MULTI-AGENT ORCHESTRATION PIPELINE]
+# File: src/pipeline.py
+#
+# SEQUENTIAL NODE ARCHITECTURE OVERVIEW:
+#   - [NODE 0]: Pre-Flight Input Guardrails Shield (validate_posting_text, anti-injection, length/charset)
+#   - [NODE 1]: Flow Context Engine & State Container (JobReviewFlow / _analyze_without_crewai)
+#   - [NODE 2 / AGENT 1]: Posting Parser Specialist Agent (parse_posting - entity, email, salary, links)
+#   - [NODE 3 / AGENT 2]: Coordinator & Routing Planner (Dynamic investigation DAG formulation)
+#   - [NODE 4 / AGENT 3]: Red-Flag Threat Scanner Agent (detect_red_flags - deterministic rules & regex)
+#   - [NODE 5 / AGENT 4]: Historical FAISS Vector Similarity Agent (EMSCAD nearest-neighbor embeddings)
+#   - [NODE 6 / AGENT 5]: Company Verification Agent & FastMCP Tools (DNS, RDAP, HTTP probe, DuckDuckGo)
+#   - [NODE 7 / AGENT 6]: Deterministic Policy Arbiter & Risk Scoring Engine (calculate_decision, risk_score)
+#   - [NODE 8]: Storage & Observability Audit Layer (save_result to SQLite DB)
+#   - [NODE 9]: Streamlit Interactive UI Presentation Layer (app.py)
+# ====================================================================================================
+
 import os
 from time import perf_counter
 from uuid import uuid4
@@ -9,9 +26,20 @@ from .storage import save_result
 from .guardrails import validate_posting_text
 
 
+# ====================================================================================================
+# [PORTION: PIPELINE ENTRYPOINT & ROUTING DISPATCHER]
+# ====================================================================================================
 def analyze_posting(text: str) -> AnalysisResult:
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 0: PRE-FLIGHT INPUT GUARDRAILS SHIELD]
+    # Scans for prompt injection attacks, payload exploits, null characters, and character boundaries.
+    # ------------------------------------------------------------------------------------------------
     text = validate_posting_text(text)
-    # Default to deterministic pipeline unless CrewAI agent mode is explicitly turned on
+
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 1: FLOW EXECUTION DISPATCHER]
+    # Selects between CrewAI Flow with LLM agent stack or Deterministic Multi-Agent pipeline.
+    # ------------------------------------------------------------------------------------------------
     if os.getenv("CREWAI_AGENT_ENABLED", "false").lower() != "true":
         return _analyze_without_crewai(text)
     try:
@@ -22,17 +50,28 @@ def analyze_posting(text: str) -> AnalysisResult:
         return _analyze_without_crewai(text)
 
 
+# ====================================================================================================
+# [PORTION: DETERMINISTIC MULTI-AGENT EXECUTION PIPELINE]
+# Function: _analyze_without_crewai(text: str) -> AnalysisResult
+# Runs autonomous sequential investigation through Nodes 1 to 8.
+# ====================================================================================================
 def _analyze_without_crewai(text: str) -> AnalysisResult:
     """Run full deterministic multi-agent workflow when CrewAI LLM stack is not active."""
     started_at = perf_counter()
     run_id = str(uuid4())
     workflow_events: list[str] = []
 
-    # Agent 1: Posting Parser Agent
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 2 / AGENT 1: POSTING PARSER SPECIALIST AGENT]
+    # Extracts company entity, role, contact channels, links, salary claims, and candidate attributes.
+    # ------------------------------------------------------------------------------------------------
     workflow_events.append("1. Posting Parser Agent: Extracted structured fields and candidate attributes.")
     posting = parse_posting(text)
 
-    # Agent 2: Coordinator / Investigation Planner
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 3 / AGENT 2: COORDINATOR & DYNAMIC ROUTING PLANNER]
+    # Inspects extracted metadata and formulates conditional investigation plan (e.g. skip web checks if no company).
+    # ------------------------------------------------------------------------------------------------
     investigation_steps = ["Red-Flag Analysis"]
     if posting.company_name or posting.contact_email or posting.links:
         investigation_steps.append("Company/Domain Verification")
@@ -40,12 +79,18 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     investigation_steps.append("Evidence Synthesis & Verdict")
     workflow_events.append(f"2. Coordinator / Investigation Planner: Dynamic plan formulated: {', '.join(investigation_steps)}.")
 
-    # Agent 3: Red-Flag Detection Agent
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 4 / AGENT 3: RED-FLAG THREAT SCANNER AGENT]
+    # Executes rule-based scanning for upfront fee demands, sensitive info/OTP requests, WhatsApp/Telegram recruiters.
+    # ------------------------------------------------------------------------------------------------
     workflow_events.append("3. Red-Flag Detection Agent: Evaluated rule-based indicators and sensitive patterns.")
     evidence = detect_red_flags(text)
     workflow_events.append(f"   -> Identified {len(evidence)} supported evidence finding(s).")
 
-    # Agent 4: Similarity Agent
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 5 / AGENT 4: HISTORICAL FAISS VECTOR SIMILARITY AGENT]
+    # Generates dense text embedding and queries FAISS index across labeled fraudulent/legitimate job archives.
+    # ------------------------------------------------------------------------------------------------
     similar_postings = []
     similarity_review = None
     try:
@@ -64,7 +109,11 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     except Exception as err:
         workflow_events.append(f"4. Similarity Agent: Notice - {type(err).__name__}")
 
-    # Agent 5: Company Verification Agent
+
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 6 / AGENT 5: COMPANY VERIFICATION AGENT & FASTMCP TOOLS]
+    # Connects to FastMCP tools (DNS, RDAP, HTTP Probe, DuckDuckGo, LinkedIn, MCA India) in parallel.
+    # ------------------------------------------------------------------------------------------------
     from .schemas import CompanyCheck
     from .mcp_server import lookup_domain_dns, lookup_domain_rdap, search_company_public_sources
     import re
@@ -84,7 +133,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
         if domain_match:
             domain_to_check = domain_match.group(1).lower()
 
-    # 1. Live Domain Registry (RDAP & DNS) Checks
+    # Sub-Step 6.1: Live Domain Registry (RDAP & DNS) Checks
     free_mail_providers = {"gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "rediffmail.com", "icloud.com"}
     major_enterprises = {"amazon", "google", "microsoft", "tata", "tcs", "infosys", "wipro", "ibm", "deloitte", "accenture", "apple", "meta"}
     comp_lower = (posting.company_name or "").lower()
@@ -357,7 +406,11 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     workflow_events.append(f"5. Company Verification Agent: Checked public sources and domain (Status: {company_check.status}).")
 
 
-    # Agent 6: Evidence / Verdict Agent
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 7 / AGENT 6: DETERMINISTIC POLICY ARBITER & DYNAMIC RISK SCORING ENGINE]
+    # (Code reference: src/policy.py - calculate_decision & calculate_risk_score)
+    # Synthesizes all gathered evidence, red flags, and FastMCP registry checks to assign final verdict.
+    # ------------------------------------------------------------------------------------------------
     decision = calculate_decision(evidence, company_check)
     workflow_events.append(f"6. Evidence / Verdict Agent: Synthesis complete -> Category assigned: {decision.category}.")
 
@@ -373,5 +426,11 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
         workflow_events=workflow_events,
         duration_seconds=duration,
     )
+
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 8: PERSISTENCE & SQLITE AUDIT DATABASE LAYER]
+    # (Code reference: src/storage.py - save_result)
+    # Records structured analysis outcome, triggered rules, and raw payload into SQLite for auditability.
+    # ------------------------------------------------------------------------------------------------
     save_result(result, text)
     return result
