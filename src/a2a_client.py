@@ -38,11 +38,18 @@ async def _send_a2a_request(payload: dict) -> dict:
             await client.close()
 
     response_text = "\n".join(part for part in text_parts if part).strip()
+    # Strip markdown code blocks if wrapped by the LLM
+    if "```json" in response_text:
+        response_text = response_text.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in response_text:
+        response_text = response_text.split("```", 1)[1].split("```", 1)[0].strip()
+
     start = response_text.find("{")
     end = response_text.rfind("}")
     if start < 0 or end < start:
-        raise ValueError("The ADK verifier returned no JSON result.")
-    return json.loads(response_text[start:end + 1])
+        raise ValueError(f"The ADK verifier returned no JSON result. Raw response: {response_text[:200]}")
+    parsed_json = json.loads(response_text[start:end + 1])
+    return parsed_json
 
 
 def verify_company_with_adk(payload: dict) -> dict:

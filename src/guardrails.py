@@ -60,9 +60,9 @@ def check_toxic_abusive(text: str) -> tuple[bool, str | None]:
     return False, None
 
 
-# [NODE 0 · PORTION 2 · L63: INPUT TEXT BOUNDARY & NULL BYTE CLEARANCE]
-def validate_posting_text(text: str) -> str:
-    """Validate input text size, character validity, and security clearance."""
+# [NODE 0 · PORTION 2 · L63: INPUT TEXT BOUNDARY, NULL BYTE & SECURITY CLEARANCE]
+def validate_posting_text(text: str, enforce_security: bool = True) -> str:
+    """Validate input text size, character validity, and security clearance against prompt injections and malicious content."""
     clean_text = text.strip()
     if len(clean_text) < MIN_POSTING_CHARACTERS:
         raise ValueError(f"Paste a fuller job description (at least {MIN_POSTING_CHARACTERS} characters).")
@@ -70,12 +70,18 @@ def validate_posting_text(text: str) -> str:
         # Gracefully clamp long inputs to maximum character bound to preserve continuity
         clean_text = clean_text[:MAX_POSTING_CHARACTERS]
     if "\x00" in clean_text:
-        raise ValueError("The job description contains an invalid null character. Please paste plain text.")
+        raise ValueError("Security Guardrail Violation: The input contains an invalid null byte (\x00).")
 
-    is_injection, reason = check_prompt_injection(clean_text)
-    if is_injection:
-        # Instead of breaking, we log and treat the text as quarantined untrusted payload
-        pass
+    if enforce_security:
+        # 1. Toxic / Malicious payload check
+        is_toxic, tox_reason = check_toxic_abusive(clean_text)
+        if is_toxic:
+            raise ValueError(f"Security Guardrail Violation: Input rejected due to malicious/harmful keywords ({tox_reason}).")
+
+        # 2. Prompt injection defense
+        is_injection, inj_reason = check_prompt_injection(clean_text)
+        if is_injection:
+            raise ValueError(f"Security Guardrail Violation: Adversarial prompt injection detected ({inj_reason}). Untrusted instructions are blocked.")
 
     return clean_text
 
@@ -83,17 +89,51 @@ def validate_posting_text(text: str) -> str:
 def validate_tool_return(tool_name: str, payload: Any) -> dict:
     """Type-check and validate raw outputs from MCP tools before agent consumption."""
     if not isinstance(payload, dict):
-        raise TypeError(f"Tool '{tool_name}' must return a dictionary, got {type(payload).__name__}.")
-    
-    # Specific schema validations
+        raise TypeError(f"Tool '{tool_name}' schema error: Expected dict return, got {type(payload).__name__}.")
+
+    # Schema validation and type assurance
+    validated: dict[str, Any] = dict(payload)
+
     if tool_name == "lookup_domain_rdap":
-        status = payload.get("status")
-        if status not in {"found", "not_found", "invalid_domain", "unavailable"}:
-            payload["status"] = "unavailable"
+        status = validated.get("status")
+        if not isinstance(status, str) or status not in {"found", "not_found", "invalid_domain", "unavailable"}:
+            validated["status"] = "unavailable"
+        if not isinstance(validated.get("domain"), str):
+            validated["domain"] = str(validated.get("domain") or "")
+        if "events" in validated and not isinstance(validated["events"], list):
+            validated["events"] = []
+
+    elif tool_name == "lookup_domain_dns":
+        status = validated.get("status")
+        if not isinstance(status, str) or status not in {"resolved", "unresolved_domain", "no_records", "invalid_domain", "error"}:
+            validated["status"] = "error"
+        if not isinstance(validated.get("domain"), str):
+            validated["domain"] = str(validated.get("domain") or "")
+        if "ip_addresses" in validated:
+            if not isinstance(validated["ip_addresses"], list):
+                validated["ip_addresses"] = []
+            else:
+                validated["ip_addresses"] = [str(ip) for ip in validated["ip_addresses"] if isinstance(ip, (str, int))]
+
     elif tool_name == "search_company_public_sources":
-        if "results" in payload and not isinstance(payload["results"], list):
-            payload["results"] = []
-    return payload
+        status = validated.get("status")
+        if not isinstance(status, str) or status not in {"ok", "no_results", "unavailable", "error"}:
+            validated["status"] = "no_results"
+        if "results" in validated:
+            if not isinstance(validated["results"], list):
+                validated["results"] = []
+            else:
+                clean_hits = []
+                for item in validated["results"]:
+                    if isinstance(item, dict):
+                        clean_hits.append({
+                            "title": str(item.get("title", "")),
+                            "url": str(item.get("url", "")),
+                            "description": str(item.get("description", "")),
+                        })
+                validated["results"] = clean_hits
+
+    return validated
 
 
 def keep_supported_findings(findings: list[Evidence], text: str) -> list[Evidence]:

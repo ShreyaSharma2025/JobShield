@@ -106,18 +106,39 @@ RULES = [
 ]
 
 
+def is_negated_disclaimer(quote: str) -> bool:
+    """Check if the matched text is actually a legitimate company safety warning or no-fee disclaimer."""
+    lower_q = quote.lower()
+    negation_signals = [
+        "never request", "never ask", "never require", "never charge", "never collect", "never demand",
+        "does not request", "does not ask", "does not require", "does not charge", "does not collect",
+        "do not pay", "do not send any money", "do not transfer", "no registration fee", "no application fee",
+        "no fee", "no hidden fee", "no charges", "free of cost", "free of charge", "without any fee",
+        "without any charge", "zero fee", "strictly prohibits charging", "scam alert", "fraud alert",
+        "beware of fraudulent", "caution:", "disclaimer:", "never share your otp", "never ask for otp",
+    ]
+    return any(signal in lower_q for signal in negation_signals)
+
+
 def detect_red_flags(text: str) -> list[Evidence]:
     found: list[Evidence] = []
     for rule_id, title, severity, pattern, explanation in RULES:
         # BUG FIX: Use findall-style to capture ALL occurrences, not just the first
         all_matches = list(pattern.finditer(text))
         if all_matches:
-            # Combine all matched quotes for comprehensive evidence
+            # Combine all matched quotes for comprehensive evidence, filtering out legitimate negative disclaimers
             quotes = []
-            for m in all_matches[:3]:  # Cap at 3 to avoid overwhelming output
+            for m in all_matches:
                 q = m.group(0).strip()
+                if (rule_id in {"UPFRONT_PAYMENT", "SENSITIVE_INFO"}) and is_negated_disclaimer(q):
+                    continue
                 if q and q not in quotes:
                     quotes.append(q)
+                if len(quotes) >= 3:
+                    break
+
+            if not quotes:
+                continue
 
             combined_quote = " [...] ".join(quotes) if len(quotes) > 1 else quotes[0]
 
@@ -127,7 +148,7 @@ def detect_red_flags(text: str) -> list[Evidence]:
                     title=title,
                     severity=severity,
                     quote=combined_quote,
-                    explanation=explanation + (f" ({len(all_matches)} occurrence(s) found.)" if len(all_matches) > 1 else ""),
+                    explanation=explanation + (f" ({len(quotes)} occurrence(s) found.)" if len(quotes) > 1 else ""),
                 )
             )
 

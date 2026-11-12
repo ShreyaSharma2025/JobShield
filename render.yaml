@@ -1,0 +1,44 @@
+services:
+  # ---------------------------------------------------------------------------
+  # 1. Google ADK Company Verification Agent (A2A Protocol Microservice)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: jobshield-verifier
+    env: docker
+    dockerfilePath: Dockerfile.verifier
+    plan: free
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: ADK_MODEL
+        value: gemini-2.5-flash
+      - key: A2A_PROTOCOL
+        value: https
+
+  # ---------------------------------------------------------------------------
+  # 2. JobShield Streamlit Web Application (CrewAI Flow Coordinator + UI)
+  # ---------------------------------------------------------------------------
+  - type: web
+    name: jobshield-web
+    env: docker
+    dockerfilePath: Dockerfile.web
+    plan: free
+    envVars:
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: BRAVE_SEARCH_API_KEY
+        sync: false
+      - key: CREWAI_AGENT_ENABLED
+        value: "true"
+      - key: CREWAI_MODEL
+        value: gemini/gemini-2.5-flash
+      - key: A2A_AGENT_ENABLED
+        value: "true"
+      - key: A2A_AGENT_URL
+        fromService:
+          type: web
+          name: jobshield-verifier
+          property: host
+

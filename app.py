@@ -936,7 +936,13 @@ with tab_analyzer:
                 analysis_res = analyze_posting(cleaned_jd)
                 st.session_state["last_analysis"] = analysis_res
             except Exception as e:
-                st.error(f"Error during analysis: {e}")
+                err_msg = str(e)
+                if "Security Guardrail Violation" in err_msg:
+                    status_box.update(label="🛑 Security Guardrail Intercepted Payload", state="error", expanded=True)
+                    st.error(f"🛡️ **Pre-Flight Security Shield Blocked Input:**\n\n{err_msg}")
+                else:
+                    status_box.update(label="⚠️ Investigation Terminated on Error", state="error", expanded=True)
+                    st.error(f"Error during analysis: {err_msg}")
                 st.stop()
 
             st.write(f"⚖️ **Step 6/6 · Evidence & Verdict Arbiter:** Evidence synthesized across all specialist agents -> Final Risk Verdict: **{analysis_res.decision.category}**")

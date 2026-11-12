@@ -3,6 +3,14 @@ import os
 import re
 from datetime import datetime, timezone
 
+try:
+    from .guardrails import validate_tool_return
+except ImportError:
+    try:
+        from src.guardrails import validate_tool_return
+    except Exception:
+        validate_tool_return = lambda tool_name, payload: payload
+
 import httpx
 try:
     from mcp.server.fastmcp import FastMCP
@@ -27,7 +35,7 @@ def lookup_domain_rdap(domain: str) -> dict:
     """Look up basic public registration events for an email or website domain."""
     clean_domain = domain.strip().lower().rstrip(".")
     if not DOMAIN_RE.fullmatch(clean_domain):
-        return {"status": "invalid_domain", "domain": clean_domain}
+        return validate_tool_return("lookup_domain_rdap", {"status": "invalid_domain", "domain": clean_domain})
 
     parts = clean_domain.split(".")
     if len(parts) > 2 and parts[-2] not in {"co", "com", "org", "gov", "ac", "edu", "net"}:
@@ -41,7 +49,7 @@ def lookup_domain_rdap(domain: str) -> dict:
     try:
         response = httpx.get(source_url, timeout=HTTP_TIMEOUT, follow_redirects=True)
         if response.status_code == 404:
-            return {"status": "not_found", "domain": clean_domain, "source_url": source_url}
+            return validate_tool_return("lookup_domain_rdap", {"status": "not_found", "domain": clean_domain, "source_url": source_url})
         response.raise_for_status()
         data = response.json()
         events = [
@@ -49,15 +57,15 @@ def lookup_domain_rdap(domain: str) -> dict:
             for event in data.get("events", [])
             if event.get("eventAction") in {"registration", "expiration"}
         ]
-        return {
+        return validate_tool_return("lookup_domain_rdap", {
             "status": "found",
             "domain": clean_domain,
             "events": events,
             "source_url": source_url,
             "checked_at": datetime.now(timezone.utc).isoformat(),
-        }
+        })
     except (httpx.HTTPError, ValueError) as error:
-        return {"status": "unavailable", "domain": clean_domain, "source_url": source_url, "error": type(error).__name__}
+        return validate_tool_return("lookup_domain_rdap", {"status": "unavailable", "domain": clean_domain, "source_url": source_url, "error": type(error).__name__})
 
 
 @mcp.tool()
@@ -66,21 +74,21 @@ def lookup_domain_dns(domain: str) -> dict:
     import socket
     clean_domain = domain.strip().lower().rstrip(".")
     if not DOMAIN_RE.fullmatch(clean_domain):
-        return {"status": "invalid_domain", "domain": clean_domain}
+        return validate_tool_return("lookup_domain_dns", {"status": "invalid_domain", "domain": clean_domain})
     try:
         socket.setdefaulttimeout(DNS_TIMEOUT)
         addr_info = socket.getaddrinfo(clean_domain, 80, proto=socket.IPPROTO_TCP)
         ips = sorted(list({entry[4][0] for entry in addr_info}))
-        return {
+        return validate_tool_return("lookup_domain_dns", {
             "status": "resolved" if ips else "no_records",
             "domain": clean_domain,
             "ip_addresses": ips[:4],
             "checked_at": datetime.now(timezone.utc).isoformat(),
-        }
+        })
     except socket.gaierror:
-        return {"status": "unresolved_domain", "domain": clean_domain, "ip_addresses": []}
+        return validate_tool_return("lookup_domain_dns", {"status": "unresolved_domain", "domain": clean_domain, "ip_addresses": []})
     except Exception as error:
-        return {"status": "error", "domain": clean_domain, "error": type(error).__name__}
+        return validate_tool_return("lookup_domain_dns", {"status": "error", "domain": clean_domain, "error": type(error).__name__})
 
 
 def _parse_ddg_html(html_text: str, query: str) -> list[dict]:
@@ -253,13 +261,13 @@ def search_company_public_sources(company_name: str, extra_terms: str = "") -> d
             "description": "Verify registered business legal identity (CIN), registration date, and official directors on the MCA portal.",
         })
 
-    return {
+    return validate_tool_return("search_company_public_sources", {
         "status": "ok" if results else "no_results",
         "engine": engine_name,
         "query": query,
         "results": results,
         "checked_at": datetime.now(timezone.utc).isoformat(),
-    }
+    })
 
 
 

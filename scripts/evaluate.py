@@ -84,21 +84,53 @@ def main() -> None:
     labels = ["legitimate", "fraudulent"]
     binary_predictions = ["fraudulent" if label == "fraudulent" else "legitimate" for label in predicted]
     tn, fp, fn, tp = confusion_matrix(truth, binary_predictions, labels=labels).ravel()
+
+    # Cost Estimation Model (Gemini 2.5 Flash / Gemini 3.6 Flash Pricing)
+    # Input tokens: $0.075 per 1M tokens ($0.000075 / 1k)
+    # Output tokens: $0.30 per 1M tokens ($0.00030 / 1k)
+    # USD to INR conversion rate ~ 86.0
+    INPUT_RATE_PER_MILLION = 0.075
+    OUTPUT_RATE_PER_MILLION = 0.30
+    USD_TO_INR = 86.0
+
+    prompt_toks = token_totals.get("prompt_tokens", 0)
+    completion_toks = token_totals.get("completion_tokens", 0)
+
+    est_cost_usd = (prompt_toks / 1_000_000.0 * INPUT_RATE_PER_MILLION) + (completion_toks / 1_000_000.0 * OUTPUT_RATE_PER_MILLION)
+    est_cost_inr = est_cost_usd * USD_TO_INR
+    mean_cost_usd_per_posting = (est_cost_usd / len(truth)) if truth else 0.0
+    mean_cost_inr_per_posting = (est_cost_inr / len(truth)) if truth else 0.0
+
+    mean_duration = sum(durations) / len(durations) if durations else 0.0
+    throughput_postings_per_min = (len(truth) / (sum(durations) / 60.0)) if sum(durations) > 0 else 0.0
+
     report = {
         "mode": args.mode,
         "rows": len(truth),
         "uncertain_or_abstained": sum(label == "uncertain" for label in predicted),
         "positive_class": "fraudulent",
-        "precision": precision_score(truth, binary_predictions, pos_label="fraudulent", zero_division=0),
-        "recall": recall_score(truth, binary_predictions, pos_label="fraudulent", zero_division=0),
-        "f1": f1_score(truth, binary_predictions, pos_label="fraudulent", zero_division=0),
+        "precision": float(round(precision_score(truth, binary_predictions, pos_label="fraudulent", zero_division=0), 4)),
+        "recall": float(round(recall_score(truth, binary_predictions, pos_label="fraudulent", zero_division=0), 4)),
+        "f1": float(round(f1_score(truth, binary_predictions, pos_label="fraudulent", zero_division=0), 4)),
         "false_positives": int(fp),
         "false_negatives": int(fn),
         "true_positives": int(tp),
         "true_negatives": int(tn),
-        "mean_seconds_per_posting": sum(durations) / len(durations),
-        "total_seconds": sum(durations),
-        "recorded_token_usage": token_totals,
+        "performance_and_runtime": {
+            "total_seconds": float(round(sum(durations), 3)),
+            "mean_seconds_per_posting": float(round(mean_duration, 3)),
+            "throughput_postings_per_minute": float(round(throughput_postings_per_min, 2)),
+            "min_seconds": float(round(min(durations), 3)) if durations else 0.0,
+            "max_seconds": float(round(max(durations), 3)) if durations else 0.0,
+        },
+        "token_usage_and_cost_estimates": {
+            "recorded_token_usage": token_totals,
+            "cost_model": "Gemini 2.5/3.6 Flash ($0.075/1M input, $0.30/1M output)",
+            "estimated_total_cost_usd": float(round(est_cost_usd, 6)),
+            "estimated_total_cost_inr": float(round(est_cost_inr, 4)),
+            "estimated_cost_per_posting_usd": float(round(mean_cost_usd_per_posting, 6)),
+            "estimated_cost_per_posting_inr": float(round(mean_cost_inr_per_posting, 4)),
+        },
         "interpretation": "High Risk is counted as a fraud prediction; Needs Verification is treated as not declaring fraud. Review this conservative metric choice when reporting results.",
     }
     output = DATA_DIR / f"evaluation_{args.mode}.json"

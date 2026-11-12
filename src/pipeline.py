@@ -47,7 +47,12 @@ def analyze_posting(text: str) -> AnalysisResult:
         from .flow import JobReviewFlow
         review = JobReviewFlow(text)
         return review.kickoff()
-    except Exception:
+    except Exception as exc:
+        import logging
+        logging.getLogger("jobshield").warning(
+            "CrewAI Flow execution encountered '%s: %s'. Falling back to deterministic specialist engine.",
+            type(exc).__name__, exc
+        )
         return _analyze_without_crewai(text)
 
 
@@ -135,6 +140,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     # ------------------------------------------------------------------------------------------------
     from .schemas import CompanyCheck
     from .mcp_server import lookup_domain_dns, lookup_domain_rdap, search_company_public_sources
+    from .guardrails import validate_tool_return
     import re
 
     company_check = CompanyCheck(
@@ -171,7 +177,8 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     def _run_dns():
         if domain_to_check:
             try:
-                return lookup_domain_dns(domain_to_check)
+                res = lookup_domain_dns(domain_to_check)
+                return validate_tool_return("lookup_domain_dns", res)
             except Exception:
                 return None
         return None
@@ -179,7 +186,8 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     def _run_rdap():
         if domain_to_check and domain_to_check not in free_mail_providers:
             try:
-                return lookup_domain_rdap(domain_to_check)
+                res = lookup_domain_rdap(domain_to_check)
+                return validate_tool_return("lookup_domain_rdap", res)
             except Exception:
                 return None
         return None
@@ -208,7 +216,8 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
         if posting.company_name:
             try:
                 clean = posting.company_name.strip()
-                return search_company_public_sources(clean, "careers official site")
+                res = search_company_public_sources(clean, "careers official site")
+                return validate_tool_return("search_company_public_sources", res)
             except Exception:
                 return None
         return None
