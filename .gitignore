@@ -11,6 +11,8 @@ data/*.jsonl
 data/*.faiss
 data/*_postings.csv
 !data/synthetic_indian_scams.json
+!data/job_postings.faiss
+!data/job_postings_metadata.json
 .env.*
 !.env.example
 logs/

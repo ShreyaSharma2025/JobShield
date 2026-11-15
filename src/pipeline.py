@@ -74,100 +74,41 @@ def analyze_document(file_bytes: bytes, filename: str) -> AnalysisResult:
     return analyze_posting(res["text"])
 
 
-# ====================================================================================================
-# [PORTION: DETERMINISTIC MULTI-AGENT EXECUTION PIPELINE]
-# Function: _analyze_without_crewai(text: str) -> AnalysisResult
-# Runs autonomous sequential investigation through Nodes 1 to 8.
-# ====================================================================================================
-def _analyze_without_crewai(text: str) -> AnalysisResult:
-    """Run full deterministic multi-agent workflow when CrewAI LLM stack is not active."""
-    started_at = perf_counter()
-    run_id = str(uuid4())
-    workflow_events: list[str] = []
-
-    # ------------------------------------------------------------------------------------------------
-    # [NODE 2 / AGENT 1 · L70: POSTING PARSER SPECIALIST AGENT]
-    # Extracts company entity, role, contact channels, links, salary claims, and candidate attributes.
-    # ------------------------------------------------------------------------------------------------
-    workflow_events.append("1. Posting Parser Agent: Extracted structured fields and candidate attributes.")
-    posting = parse_posting(text)
-
-    # ------------------------------------------------------------------------------------------------
-    # [NODE 3 / AGENT 2 · L77: COORDINATOR & DYNAMIC ROUTING PLANNER]
-    # Inspects extracted metadata and formulates conditional investigation plan (e.g. skip web checks if no company).
-    # ------------------------------------------------------------------------------------------------
-    investigation_steps = ["Red-Flag Analysis"]
-    if posting.company_name or posting.contact_email or posting.links:
-        investigation_steps.append("Company/Domain Verification")
-    investigation_steps.append("Historical Vector Similarity")
-    investigation_steps.append("Evidence Synthesis & Verdict")
-    workflow_events.append(f"2. Coordinator / Investigation Planner: Dynamic plan formulated: {', '.join(investigation_steps)}.")
-
-    # ------------------------------------------------------------------------------------------------
-    # [NODE 4 / AGENT 3 · L88: RED-FLAG THREAT SCANNER AGENT]
-    # Executes rule-based scanning for upfront fee demands, sensitive info/OTP requests, WhatsApp/Telegram recruiters.
-    # ------------------------------------------------------------------------------------------------
-    workflow_events.append("3. Red-Flag Detection Agent: Evaluated rule-based indicators and sensitive patterns.")
-    evidence = detect_red_flags(text)
-    workflow_events.append(f"   -> Identified {len(evidence)} supported evidence finding(s).")
-
-    # ------------------------------------------------------------------------------------------------
-    # [NODE 5 / AGENT 4 · L96: HISTORICAL FAISS VECTOR SIMILARITY AGENT]
-    # Generates dense text embedding and queries FAISS index across labeled fraudulent/legitimate job archives.
-    # ------------------------------------------------------------------------------------------------
-    similar_postings = []
-    similarity_review = None
-    try:
-        from .similarity import search_similar_postings
-        from .schemas import SimilarPosting, SimilarityReview
-        raw_similar = search_similar_postings(text, top_k=4)
-        if raw_similar:
-            similar_postings = [SimilarPosting.model_validate(item) for item in raw_similar]
-            workflow_events.append(f"4. Similarity Agent: Retrieved {len(similar_postings)} nearest labeled historical posting(s).")
-            similarity_review = SimilarityReview(
-                summary=f"Retrieved {len(similar_postings)} historical posting(s) with closest semantic patterns.",
-                limitation="Historical similarity is supporting context for patterns only, not mathematical proof of fraud."
-            )
-        else:
-            workflow_events.append("4. Similarity Agent: No historical index match or index still initializing.")
-    except Exception as err:
-        workflow_events.append(f"4. Similarity Agent: Notice - {type(err).__name__}")
-
-
-    # ------------------------------------------------------------------------------------------------
-    # [NODE 6 / AGENT 5 · L119: COMPANY VERIFICATION AGENT & FASTMCP TOOLS]
-    # Connects to FastMCP tools (DNS, RDAP, HTTP Probe, DuckDuckGo, LinkedIn, MCA India) in parallel.
-    # ------------------------------------------------------------------------------------------------
+def verify_company_live(posting, evidence=None):
+    """Run parallel DNS, RDAP, HTTP probe, search, and registry checks to verify company identity."""
     from .schemas import CompanyCheck
     from .mcp_server import lookup_domain_dns, lookup_domain_rdap, search_company_public_sources
     from .guardrails import validate_tool_return
     import re
+    import concurrent.futures
 
+    evidence = evidence or []
     company_check = CompanyCheck(
         status="unavailable",
-        company_name=posting.company_name,
+        company_name=getattr(posting, "company_name", None),
         findings=[],
         sources=[]
     )
 
     domain_to_check = None
-    if posting.contact_email and "@" in posting.contact_email:
-        domain_to_check = posting.contact_email.rsplit("@", 1)[-1].lower()
-    elif posting.links:
-        domain_match = re.search(r"https?://(?:www\.)?([^/:\s]+)", posting.links[0])
+    contact_email = getattr(posting, "contact_email", None)
+    links = getattr(posting, "links", []) or []
+    company_name = getattr(posting, "company_name", None)
+
+    if contact_email and "@" in contact_email:
+        domain_to_check = contact_email.rsplit("@", 1)[-1].lower()
+    elif links:
+        domain_match = re.search(r"https?://(?:www\.)?([^/:\s]+)", links[0])
         if domain_match:
             domain_to_check = domain_match.group(1).lower()
 
     # Sub-Step 6.1: Live Domain Registry (RDAP & DNS) Checks
     free_mail_providers = {"gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "rediffmail.com", "icloud.com"}
     major_enterprises = {"amazon", "google", "microsoft", "tata", "tcs", "infosys", "wipro", "ibm", "deloitte", "accenture", "apple", "meta"}
-    comp_lower = (posting.company_name or "").lower()
+    comp_lower = (company_name or "").lower()
     is_major_brand = any(brand in comp_lower for brand in major_enterprises)
 
     queried_sites = []
-
-    # Parallel execution of external verification checks for fast response
-    import concurrent.futures
 
     dns_task_res = None
     rdap_task_res = None
@@ -194,8 +135,8 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
 
     def _run_probe():
         target_live = None
-        if posting.links:
-            target_live = posting.links[0]
+        if links:
+            target_live = links[0]
         elif domain_to_check and domain_to_check not in free_mail_providers:
             target_live = f"https://{domain_to_check}"
         if target_live:
@@ -213,9 +154,9 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
         return None
 
     def _run_search():
-        if posting.company_name:
+        if company_name:
             try:
-                clean = posting.company_name.strip()
+                clean = company_name.strip()
                 res = search_company_public_sources(clean, "careers official site")
                 return validate_tool_return("search_company_public_sources", res)
             except Exception:
@@ -229,19 +170,19 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
         f_search = executor.submit(_run_search)
 
         try:
-            dns_task_res = f_dns.result(timeout=5.0)
+            dns_task_res = f_dns.result(timeout=6.0)
         except Exception:
             dns_task_res = None
         try:
-            rdap_task_res = f_rdap.result(timeout=5.0)
+            rdap_task_res = f_rdap.result(timeout=6.0)
         except Exception:
             rdap_task_res = None
         try:
-            probe_task_res = f_probe.result(timeout=5.0)
+            probe_task_res = f_probe.result(timeout=6.0)
         except Exception:
             probe_task_res = None
         try:
-            search_task_res = f_search.result(timeout=5.0)
+            search_task_res = f_search.result(timeout=6.0)
         except Exception:
             search_task_res = None
 
@@ -327,7 +268,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
                 "status": "Public Webmail Identified",
                 "result_summary": f"Applicant contacted via free personal mail service (@{domain_to_check})",
                 "verdict_signal": free_signal,
-                "rationale": f"Claimed recruiter represents '{posting.company_name or 'corporate'}' using @{domain_to_check}. Legitimate corporate recruiters from major firms strictly use corporate emails." if is_major_brand else "Free webmail may be used by micro-freelancers, but requires secondary verification.",
+                "rationale": f"Claimed recruiter represents '{company_name or 'corporate'}' using @{domain_to_check}. Legitimate corporate recruiters from major firms strictly use corporate emails." if is_major_brand else "Free webmail may be used by micro-freelancers, but requires secondary verification.",
             })
 
     # 3. Evaluate Live HTTP Probe Result
@@ -371,8 +312,8 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
         })
 
     # 4. Evaluate Web Search Result
-    if search_task_res and posting.company_name:
-        clean_comp = posting.company_name.strip()
+    if search_task_res and company_name:
+        clean_comp = company_name.strip()
         search_engine = search_task_res.get("engine", "Live Web Search")
         results_found = search_task_res.get("results", [])
         if results_found:
@@ -448,13 +389,81 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     elif domain_to_check and company_check.dns_status and "Unresolved" in company_check.dns_status:
         company_check.status = "not_found"
         company_check.findings.append("Domain failed DNS resolution or does not exist.")
-    elif not domain_to_check and posting.company_name:
+    elif not domain_to_check and company_name:
         company_check.status = "ambiguous"
-        company_check.findings.append(f"Company '{posting.company_name}' identified. Cross-reference official links above to verify opening.")
+        company_check.findings.append(f"Company '{company_name}' identified. Cross-reference official links above to verify opening.")
     else:
         company_check.status = "unavailable"
         company_check.findings.append("No explicit company or website provided for external verification.")
 
+    return company_check
+
+
+# ====================================================================================================
+# [PORTION: DETERMINISTIC MULTI-AGENT EXECUTION PIPELINE]
+# Function: _analyze_without_crewai(text: str) -> AnalysisResult
+# Runs autonomous sequential investigation through Nodes 1 to 8.
+# ====================================================================================================
+def _analyze_without_crewai(text: str) -> AnalysisResult:
+    """Run full deterministic multi-agent workflow when CrewAI LLM stack is not active."""
+    started_at = perf_counter()
+    run_id = str(uuid4())
+    workflow_events: list[str] = []
+
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 2 / AGENT 1 · L70: POSTING PARSER SPECIALIST AGENT]
+    # Extracts company entity, role, contact channels, links, salary claims, and candidate attributes.
+    # ------------------------------------------------------------------------------------------------
+    workflow_events.append("1. Posting Parser Agent: Extracted structured fields and candidate attributes.")
+    posting = parse_posting(text)
+
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 3 / AGENT 2 · L77: COORDINATOR & DYNAMIC ROUTING PLANNER]
+    # Inspects extracted metadata and formulates conditional investigation plan (e.g. skip web checks if no company).
+    # ------------------------------------------------------------------------------------------------
+    investigation_steps = ["Red-Flag Analysis"]
+    if posting.company_name or posting.contact_email or posting.links:
+        investigation_steps.append("Company/Domain Verification")
+    investigation_steps.append("Historical Vector Similarity")
+    investigation_steps.append("Evidence Synthesis & Verdict")
+    workflow_events.append(f"2. Coordinator / Investigation Planner: Dynamic plan formulated: {', '.join(investigation_steps)}.")
+
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 4 / AGENT 3 · L88: RED-FLAG THREAT SCANNER AGENT]
+    # Executes rule-based scanning for upfront fee demands, sensitive info/OTP requests, WhatsApp/Telegram recruiters.
+    # ------------------------------------------------------------------------------------------------
+    workflow_events.append("3. Red-Flag Detection Agent: Evaluated rule-based indicators and sensitive patterns.")
+    evidence = detect_red_flags(text)
+    workflow_events.append(f"   -> Identified {len(evidence)} supported evidence finding(s).")
+
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 5 / AGENT 4 · L96: HISTORICAL FAISS VECTOR SIMILARITY AGENT]
+    # Generates dense text embedding and queries FAISS index across labeled fraudulent/legitimate job archives.
+    # ------------------------------------------------------------------------------------------------
+    similar_postings = []
+    similarity_review = None
+    try:
+        from .similarity import search_similar_postings
+        from .schemas import SimilarPosting, SimilarityReview
+        raw_similar = search_similar_postings(text, top_k=4)
+        if raw_similar:
+            similar_postings = [SimilarPosting.model_validate(item) for item in raw_similar]
+            workflow_events.append(f"4. Similarity Agent: Retrieved {len(similar_postings)} nearest labeled historical posting(s).")
+            similarity_review = SimilarityReview(
+                summary=f"Retrieved {len(similar_postings)} historical posting(s) with closest semantic patterns.",
+                limitation="Historical similarity is supporting context for patterns only, not mathematical proof of fraud."
+            )
+        else:
+            workflow_events.append("4. Similarity Agent: No historical index match or index still initializing.")
+    except Exception as err:
+        workflow_events.append(f"4. Similarity Agent: Notice - {type(err).__name__}")
+
+
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 6 / AGENT 5 · L119: COMPANY VERIFICATION AGENT & FASTMCP TOOLS]
+    # Connects to FastMCP tools (DNS, RDAP, HTTP Probe, DuckDuckGo, LinkedIn, MCA India) in parallel.
+    # ------------------------------------------------------------------------------------------------
+    company_check = verify_company_live(posting, evidence)
     workflow_events.append(f"5. Company Verification Agent: Checked public sources and domain (Status: {company_check.status}).")
 
 

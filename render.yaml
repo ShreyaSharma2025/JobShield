@@ -13,7 +13,7 @@ services:
       - key: BRAVE_SEARCH_API_KEY
         sync: false
       - key: ADK_MODEL
-        value: gemini-2.5-flash
+        value: gemini-flash-latest
       - key: A2A_PROTOCOL
         value: https
 
@@ -31,14 +31,11 @@ services:
       - key: BRAVE_SEARCH_API_KEY
         sync: false
       - key: CREWAI_AGENT_ENABLED
-        value: "true"
+        value: "false"
       - key: CREWAI_MODEL
-        value: gemini/gemini-2.5-flash
+        value: gemini/gemini-flash-latest
       - key: A2A_AGENT_ENABLED
         value: "true"
       - key: A2A_AGENT_URL
-        fromService:
-          type: web
-          name: jobshield-verifier
-          property: host
+        value: https://jobshield-verifier.onrender.com
 

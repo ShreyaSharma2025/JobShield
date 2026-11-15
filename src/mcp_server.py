@@ -75,20 +75,38 @@ def lookup_domain_dns(domain: str) -> dict:
     clean_domain = domain.strip().lower().rstrip(".")
     if not DOMAIN_RE.fullmatch(clean_domain):
         return validate_tool_return("lookup_domain_dns", {"status": "invalid_domain", "domain": clean_domain})
+    
+    ips = []
+    # 1. Standard socket DNS resolution
     try:
         socket.setdefaulttimeout(DNS_TIMEOUT)
         addr_info = socket.getaddrinfo(clean_domain, 80, proto=socket.IPPROTO_TCP)
         ips = sorted(list({entry[4][0] for entry in addr_info}))
-        return validate_tool_return("lookup_domain_dns", {
-            "status": "resolved" if ips else "no_records",
-            "domain": clean_domain,
-            "ip_addresses": ips[:4],
-            "checked_at": datetime.now(timezone.utc).isoformat(),
-        })
-    except socket.gaierror:
-        return validate_tool_return("lookup_domain_dns", {"status": "unresolved_domain", "domain": clean_domain, "ip_addresses": []})
-    except Exception as error:
-        return validate_tool_return("lookup_domain_dns", {"status": "error", "domain": clean_domain, "error": type(error).__name__})
+    except Exception:
+        ips = []
+
+    # 2. Resilient DoH (DNS-over-HTTPS) fallback for cloud/container environments where UDP 53 may be filtered
+    if not ips:
+        try:
+            doh_resp = httpx.get(
+                f"https://dns.google/resolve?name={clean_domain}&type=A",
+                timeout=HTTP_TIMEOUT,
+                headers={"Accept": "application/dns-json"},
+            )
+            if doh_resp.status_code == 200:
+                data = doh_resp.json()
+                for ans in data.get("Answer", []):
+                    if ans.get("type") in (1, 28) and "data" in ans:
+                        ips.append(ans["data"])
+        except Exception:
+            pass
+
+    return validate_tool_return("lookup_domain_dns", {
+        "status": "resolved" if ips else "unresolved_domain",
+        "domain": clean_domain,
+        "ip_addresses": ips[:4],
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    })
 
 
 def _parse_ddg_html(html_text: str, query: str) -> list[dict]:

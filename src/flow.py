@@ -127,43 +127,53 @@ class JobReviewFlow(Flow[ReviewState]):
 
     @listen("verify_company")
     def run_company_verification(self):
-        self._record("a2a-company-verification", "started")
-        email = self.state.posting.contact_email
-        payload = {
-            "run_id": self.state.run_id,
-            "company_name": self.state.posting.company_name,
-            "role": self.state.posting.role,
-            "email_domain": email.rsplit("@", 1)[-1] if email and "@" in email else None,
-            "website": self.state.posting.links[0] if self.state.posting.links else None,
-        }
-        for attempt in (1, 2):
-            try:
-                if attempt == 2:
-                    self._record("a2a-company-verification", "retry", "Retrying once after a transient failure.")
-                self.state.company_check = CompanyCheck.model_validate(verify_company_with_adk(payload))
-                self._record("a2a-company-verification", self.state.company_check.status)
-                break
-            except Exception as error:
-                self._record("a2a-company-verification", "attempt_failed", type(error).__name__)
-                if attempt == 2:
-                    self.state.company_check = CompanyCheck(
-                        status="unavailable",
-                        company_name=self.state.posting.company_name,
-                        findings=["The public verification service did not return a usable result."],
-                    )
-                    self._record("a2a-company-verification", "unavailable")
-                else:
-                    time.sleep(0.5)
+        self._record("company-verification", "started")
+        from .pipeline import verify_company_live
+        # 1. Execute live external domain DNS, RDAP, HTTP probe, search and registry check
+        live_check = verify_company_live(self.state.posting, self.state.evidence)
+        self.state.company_check = live_check
+
+        # 2. Attempt Google ADK A2A Microservice augmentation if enabled
+        enabled = os.getenv("A2A_AGENT_ENABLED", "false").lower() == "true"
+        if enabled:
+            email = self.state.posting.contact_email
+            payload = {
+                "run_id": self.state.run_id,
+                "company_name": self.state.posting.company_name,
+                "role": self.state.posting.role,
+                "email_domain": email.rsplit("@", 1)[-1] if email and "@" in email else None,
+                "website": self.state.posting.links[0] if self.state.posting.links else None,
+            }
+            for attempt in (1, 2):
+                try:
+                    if attempt == 2:
+                        self._record("a2a-company-verification", "retry", "Retrying once after a transient failure.")
+                    adk_result = verify_company_with_adk(payload)
+                    adk_check = CompanyCheck.model_validate(adk_result)
+                    if adk_check.status in ("verified_match", "not_found", "ambiguous"):
+                        self.state.company_check.status = adk_check.status
+                    for f in adk_check.findings:
+                        if f not in self.state.company_check.findings:
+                            self.state.company_check.findings.append(f)
+                    for s in adk_check.sources:
+                        if s not in self.state.company_check.sources:
+                            self.state.company_check.sources.append(s)
+                    self._record("a2a-company-verification", self.state.company_check.status)
+                    break
+                except Exception as error:
+                    self._record("a2a-company-verification", "attempt_failed", type(error).__name__)
+                    if attempt == 2:
+                        self._record("a2a-company-verification", "fallback", "Using live MCP tool verification results.")
+                    else:
+                        time.sleep(0.5)
         return self._finish()
 
     @listen("skip_company_check")
     def record_skipped_company_check(self):
-        self.state.company_check = CompanyCheck(
-            status="unavailable",
-            company_name=self.state.posting.company_name,
-            findings=["No company name was extracted from the posting."] if not self.state.posting.company_name else ["The ADK verification service is not configured or was not available."],
-        )
-        self._record("company-verification", "skipped")
+        from .pipeline import verify_company_live
+        # Still run live domain and link checks even when company entity is not explicitly stated
+        self.state.company_check = verify_company_live(self.state.posting, self.state.evidence)
+        self._record("company-verification", "completed")
         return self._finish()
 
     def _finish(self) -> AnalysisResult:
