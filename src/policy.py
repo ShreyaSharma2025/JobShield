@@ -190,3 +190,82 @@ def calculate_risk_score(evidence: list[Evidence], company_check: CompanyCheck |
     # ------------------------------------------------------------------------------------------------
     return max(0, min(100, score))
 
+
+def explain_risk_score(evidence: list[Evidence], company_check: CompanyCheck | None = None) -> dict:
+    """Return a detailed point-by-point breakdown and policy audit explanation for the risk score."""
+    items = []
+    total = 0
+
+    for item in evidence:
+        pts = 0
+        if item.rule_id.startswith("LLM_CONTEXT_"):
+            pts = 3
+            tier = "LLM Context Guidance"
+        elif item.severity == "strong":
+            pts = 30
+            tier = "Critical Red-Flag (Strong)"
+        elif item.severity == "moderate":
+            pts = 15
+            tier = "Suspicious Indicator (Moderate)"
+        elif item.severity == "weak":
+            pts = 5
+            tier = "Weak / Inconclusive Signal"
+
+        total += pts
+        items.append({
+            "source": item.title or item.rule_id,
+            "rule_id": item.rule_id,
+            "tier": tier,
+            "points": f"+{pts}",
+            "points_num": pts,
+            "quote": item.quote or "",
+            "explanation": item.explanation or "",
+        })
+
+    if company_check:
+        if company_check.status == "not_found":
+            items.append({
+                "source": "External Domain & Registry Check",
+                "rule_id": "DOMAIN_NOT_FOUND",
+                "tier": "Registry Penalty",
+                "points": "+15",
+                "points_num": 15,
+                "quote": company_check.domain or "Unresolved domain",
+                "explanation": "Claimed domain is unregistered, fictitious, or failed host DNS resolution.",
+            })
+            total += 15
+        elif company_check.status == "verified_match":
+            items.append({
+                "source": "External Domain & Registry Check",
+                "rule_id": "DOMAIN_VERIFIED",
+                "tier": "Registry Trust Credit",
+                "points": "-10",
+                "points_num": -10,
+                "quote": company_check.domain or "Verified match",
+                "explanation": "Domain matched official corporate registrar with active DNS and valid SSL endpoint.",
+            })
+            total = max(0, total - 10)
+        elif company_check.status == "ambiguous":
+            items.append({
+                "source": "External Domain & Registry Check",
+                "rule_id": "DOMAIN_AMBIGUOUS",
+                "tier": "Registry Caution",
+                "points": "+5",
+                "points_num": 5,
+                "quote": company_check.domain or "Ambiguous status",
+                "explanation": "Domain active or free webmail used; secondary confirmation on official careers site required.",
+            })
+            total += 5
+
+    clamped_score = max(0, min(100, total))
+    return {
+        "final_score": clamped_score,
+        "raw_total": total,
+        "items": items,
+        "thresholds": [
+            {"range": "0 – 24", "verdict": "Low Risk 🟢", "description": "Authentic enterprise attributes, verified domain, zero critical scam patterns."},
+            {"range": "25 – 59", "verdict": "Needs Verification 🟡", "description": "Moderate signals, ambiguous domain, personal email, or brand impersonation cues."},
+            {"range": "60 – 100", "verdict": "High Risk 🔴", "description": "Severe scam indicators, upfront payment demands, OTP/credential theft, or fake domains."}
+        ]
+    }
+

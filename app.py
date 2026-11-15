@@ -14,7 +14,7 @@ import streamlit as st
 from src.pipeline import analyze_posting, analyze_url, analyze_document
 from src.schemas import AnalysisResult
 from src.guardrails import inspect_guardrails, check_prompt_injection, check_toxic_abusive
-from src.policy import calculate_risk_score
+from src.policy import calculate_risk_score, explain_risk_score
 from src.ingestion import fetch_job_from_url, extract_text_from_document, is_safe_url
 from src.storage import (
     init_db,
@@ -976,6 +976,58 @@ with tab_analyzer:
             st.markdown(f"**Risk Severity Score:** `{score_val}/100`")
             st.progress(score_val / 100)
             st.caption(f"Run ID: `{res.run_id[:8]}...` · Latency: `{res.duration_seconds}s`")
+
+            score_expl = explain_risk_score(res.evidence, res.company_check)
+            with st.popover("ℹ️ How is this score calculated?", use_container_width=True):
+                st.markdown(f"### 🧮 Score Calculation: `{score_val}/100`")
+                st.caption("JobShield assigns risk points deterministically based on rule severity and external registry verification.")
+
+                st.markdown("#### 🔍 Active Points Breakdown for this Posting")
+                if score_expl["items"]:
+                    for item in score_expl["items"]:
+                        p_color = "#ef4444" if item["points_num"] > 10 else ("#f59e0b" if item["points_num"] > 0 else "#10b981")
+                        st.markdown(
+                            f"""
+                            <div style="background: var(--bg-surface); padding: 0.6rem 0.8rem; border-radius: 8px; border-left: 4px solid {p_color}; margin-bottom: 0.45rem;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <strong>{item['source']}</strong>
+                                    <span style="color: {p_color}; font-weight: 800; font-family: monospace; font-size: 0.95rem;">{item['points']} pts</span>
+                                </div>
+                                <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">
+                                    Rule: <code>{item['rule_id']}</code> · Tier: <em>{item['tier']}</em>
+                                </div>
+                                <div style="font-size: 0.85rem; margin-top: 0.25rem;">
+                                    {item['explanation']}
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+                    st.markdown(f"**Calculated Score:** `{score_expl['raw_total']} pts` (Clamped between 0 and 100 ➔ **`{score_val}/100`**)")
+                else:
+                    st.success("✅ Clean Posting: 0 threat indicators triggered. Baseline risk score is 0/100.")
+
+                st.markdown("---")
+                st.markdown("#### ⚖️ JobShield Deterministic Scoring Policy")
+                st.markdown(
+                    """
+| Severity Tier | Points Added | Triggered Threat Category |
+|---|---|---|
+| **🔴 Critical (Strong)** | **+30 pts each** | Immediate monetary loss or credential theft (`UPFRONT_PAYMENT`, `SENSITIVE_INFO`) |
+| **🟡 High Warning (Moderate)** | **+15 pts each** | Off-channel messaging (`SUSPICIOUS_MESSAGING`), brand impersonation (`IMPERSONATION_CUES`), unrealistic wages (`UNREALISTIC_COMP`), task scams (`TASK_BASED_SCAM`), artificial urgency (`URGENCY`) |
+| **⚪ Cautionary (Weak)** | **+5 pts each** | Free webmail recruiters (`PERSONAL_EMAIL`), poor grammar (`POOR_WRITING`), phone-only contact |
+| **🤖 Contextual Signal** | **+3 pts each** | Soft semantic guidance from CrewAI LLM specialist (`LLM_CONTEXT_*`) |
+| **🏢 Domain Unregistered** | **+15 pts penalty** | Claimed company domain failed DNS or is unlisted in ICANN RDAP registry |
+| **⚠️ Ambiguous Domain** | **+5 pts penalty** | Free webmail with corporate claim or unverified third-party job board |
+| **🛡️ Verified Enterprise Match** | **-10 pts credit** | Authentic corporate domain with active DNS, SSL endpoint & matching careers page |
+
+**Verdict Category Ranges:**
+- **0 – 24 / 100:** 🟢 **Low Risk** (No critical patterns; authentic domain)
+- **25 – 59 / 100:** 🟡 **Needs Verification** (Moderate signals or ambiguous provenance)
+- **60 – 100 / 100:** 🔴 **High Risk** (Severe fraud patterns, upfront fee requests, or fake domains)
+                    """
+                )
+
         with res_c2:
             st.markdown("#### Evidence-Grounded Verdict Synthesis")
             st.write(res.decision.summary)
