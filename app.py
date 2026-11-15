@@ -242,6 +242,61 @@ theme_css = f"""
   }}
 
   /* =========================================================================
+     Interactive Popover & Audit Pill: Seamlessly Blends with Theme Background
+     ========================================================================= */
+  div[data-testid="stPopover"] {{
+    width: 100% !important;
+    display: flex !important;
+    justify-content: stretch !important;
+    margin-top: 0.35rem !important;
+  }}
+
+  div[data-testid="stPopover"] > button,
+  div[data-testid="stPopover"] button {{
+    width: 100% !important;
+    background-color: {"rgba(255, 255, 255, 0.55)" if not is_dark else "rgba(18, 24, 21, 0.6)"} !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px dashed {"rgba(30, 107, 56, 0.3)" if not is_dark else "rgba(46, 155, 78, 0.3)"} !important;
+    border-radius: 12px !important;
+    color: var(--text-muted) !important;
+    font-size: 0.83rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.01em !important;
+    padding: 0.48rem 0.85rem !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02) !important;
+    transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    cursor: pointer !important;
+  }}
+
+  div[data-testid="stPopover"] > button:hover,
+  div[data-testid="stPopover"] button:hover {{
+    background-color: var(--brand-light) !important;
+    color: var(--brand-primary) !important;
+    border: 1px solid var(--brand-primary) !important;
+    box-shadow: 0 4px 14px rgba(30, 107, 56, 0.12) !important;
+    transform: translateY(-1px) !important;
+  }}
+
+  div[data-testid="stPopover"] > button:focus,
+  div[data-testid="stPopover"] button:focus,
+  div[data-testid="stPopover"] > button:active {{
+    box-shadow: 0 0 0 2px var(--brand-light) !important;
+    outline: none !important;
+  }}
+
+  /* Popover Dialog Overlay & Menu Container */
+  [data-testid="stPopoverBody"],
+  div[data-baseweb="popover"] > div {{
+    background-color: var(--bg-surface) !important;
+    border: 1px solid var(--border-color) !important;
+    border-radius: 16px !important;
+    padding: 1.1rem !important;
+    box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.18) !important;
+    color: var(--text-primary) !important;
+  }}
+
+  /* =========================================================================
      Tabs & Selection Box: Full-Width Container & Ultra-Smooth Modern Pill
      Smooth curved edges, generous inner padding, smaller underbar contained inside
      ========================================================================= */
@@ -978,7 +1033,7 @@ with tab_analyzer:
             st.caption(f"Run ID: `{res.run_id[:8]}...` · Latency: `{res.duration_seconds}s`")
 
             score_expl = explain_risk_score(res.evidence, res.company_check)
-            with st.popover("ℹ️ How is this score calculated?", use_container_width=True):
+            with st.popover("📊 Score Calculation Breakdown", use_container_width=True):
                 st.markdown(f"### 🧮 Score Calculation: `{score_val}/100`")
                 st.caption("JobShield assigns risk points deterministically based on rule severity and external registry verification.")
 
