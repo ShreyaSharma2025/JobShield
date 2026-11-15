@@ -21,5 +21,6 @@ logs/
 *.png
 !docs/*.pdf
 !docs/*.png
+!docs/*.html
 scratch/
 test_results*.json
