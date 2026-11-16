@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 WORKDIR /app
-COPY requirements-agentic.txt requirements.txt ./
-RUN pip install --no-cache-dir -r requirements-agentic.txt
+COPY requirements-verifier.txt ./
+RUN pip install --no-cache-dir -r requirements-verifier.txt
 COPY . .
 ENV PORT=8080
 EXPOSE 8080

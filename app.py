@@ -1650,6 +1650,7 @@ with tab_adk_eval:
     importlib.reload(adk_eval_mod)
     get_adk_eval_summary = adk_eval_mod.get_adk_eval_summary
     generate_standalone_adk_eval_html = adk_eval_mod.generate_standalone_adk_eval_html
+    get_live_jobshield_cases = adk_eval_mod.get_live_jobshield_cases
     import streamlit.components.v1 as components
 
     st.markdown(
@@ -1674,7 +1675,13 @@ with tab_adk_eval:
 
     # Determine mode first
     active_stream_mode = st.session_state.get("adk_eval_stream_mode", "live")
-    eval_data = get_adk_eval_summary(
+    live_eval_summary = get_adk_eval_summary(
+        data_source="live",
+        live_analysis=last_anal,
+        session_analyses=session_anals,
+    )
+    live_label_count = live_eval_summary["total_cases"]
+    eval_data = live_eval_summary if active_stream_mode == "live" else get_adk_eval_summary(
         data_source=active_stream_mode,
         live_analysis=last_anal,
         session_analyses=session_anals,
@@ -1683,7 +1690,6 @@ with tab_adk_eval:
     # Top Data Controls & Action Bar
     ctrl_col1, ctrl_col2 = st.columns([2.2, 1.3], gap="medium")
     with ctrl_col1:
-        live_label_count = eval_data["total_cases"] if active_stream_mode == "live" else len(get_live_jobshield_cases())
         data_source_mode = st.radio(
             "Select Evaluation Stream:",
             options=["live", "benchmark"],
