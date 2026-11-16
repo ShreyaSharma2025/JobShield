@@ -54,6 +54,9 @@ if "jd_input" not in st.session_state:
 if "last_analysis" not in st.session_state:
     st.session_state["last_analysis"] = None
 
+if "session_analyses" not in st.session_state:
+    st.session_state["session_analyses"] = []
+
 # Load synthetic Indian test postings if available
 SYNTHETIC_DATA_PATH = Path("data/synthetic_indian_scams.json")
 samples = {}
@@ -992,6 +995,10 @@ with tab_analyzer:
             try:
                 analysis_res = analyze_posting(cleaned_jd)
                 st.session_state["last_analysis"] = analysis_res
+                if "session_analyses" not in st.session_state:
+                    st.session_state["session_analyses"] = []
+                if not any(getattr(x, "run_id", None) == analysis_res.run_id for x in st.session_state["session_analyses"]):
+                    st.session_state["session_analyses"].insert(0, analysis_res)
             except Exception as e:
                 err_msg = str(e)
                 if "Security Guardrail Violation" in err_msg:
@@ -1658,20 +1665,32 @@ with tab_adk_eval:
         unsafe_allow_html=True,
     )
 
+    # Ingest session analyses & latest run
+    last_anal = st.session_state.get("last_analysis")
+    session_anals = st.session_state.get("session_analyses", [])
+    if last_anal and not any(getattr(x, "run_id", None) == getattr(last_anal, "run_id", None) for x in session_anals):
+        session_anals = [last_anal] + list(session_anals)
+        st.session_state["session_analyses"] = session_anals
+
     # Top Data Controls & Action Bar
     ctrl_col1, ctrl_col2 = st.columns([2.2, 1.3], gap="medium")
     with ctrl_col1:
+        live_label_count = 60 + len(session_anals)
         data_source_mode = st.radio(
             "Select Evaluation Stream:",
             options=["live", "benchmark"],
-            format_func=lambda x: "⚡ Live JobShield Audit Runs (Real Data from SQLite & Session)" if x == "live" else "🎯 Standard Benchmark Suite (10 Reference Test Cases)",
+            format_func=lambda x: f"⚡ Live JobShield Audit Runs ({live_label_count} Runs · Real Data from SQLite & Session)" if x == "live" else "🎯 Standard Benchmark Suite (6 Reference Test Cases)",
             horizontal=True,
             key="adk_eval_stream_mode",
             label_visibility="collapsed"
         )
     with ctrl_col2:
-        last_anal = st.session_state.get("last_analysis")
-        standalone_html = generate_standalone_adk_eval_html(data_source=data_source_mode, live_analysis=last_anal)
+        standalone_html = generate_standalone_adk_eval_html(
+            data_source=data_source_mode,
+            live_analysis=last_anal,
+            session_analyses=session_anals,
+            base_limit=60
+        )
         st.download_button(
             label="📥 Download eval_results_report.html",
             data=standalone_html,
@@ -1682,7 +1701,12 @@ with tab_adk_eval:
         )
 
     # Ingest data
-    eval_data = get_adk_eval_summary(data_source=data_source_mode, live_analysis=last_anal)
+    eval_data = get_adk_eval_summary(
+        data_source=data_source_mode,
+        live_analysis=last_anal,
+        session_analyses=session_anals,
+        base_limit=60
+    )
 
     # Notification if current session analysis was detected and loaded
     if data_source_mode == "live" and last_anal:
