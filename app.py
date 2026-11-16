@@ -1639,51 +1639,58 @@ with tab_architecture:
 # =============================================================================
 with tab_adk_eval:
     from src.adk_eval import get_adk_eval_summary, generate_standalone_adk_eval_html
-    eval_data = get_adk_eval_summary()
-    standalone_html = generate_standalone_adk_eval_html()
+    import streamlit.components.v1 as components
 
     st.markdown(
-        f"""
+        """
         <div class="hero-card">
           <span class="brand-pill">ADK Multi-Agent Evaluation Dashboard</span>
           <h1 class="hero-title">Autonomous Agent Evaluation & Work Logs</h1>
           <p class="hero-subtitle">
-            Comprehensive evaluation of each single agent's execution, MCP tool trajectory scores, accuracy metrics, and detailed per-agent work logs across benchmark cases.
+            Comprehensive real-time evaluation of JobShield's 6 autonomous agents: live audit telemetry, per-agent action work logs, FastMCP tool trajectories, and token cost metrics.
           </p>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    # Top Action Bar with Download
-    col_d1, col_d2 = st.columns([2.5, 1.2])
-    with col_d1:
-        st.markdown(
-            f"""
-            <div style="font-size: 0.88rem; color: var(--text-muted); padding-top: 0.4rem;">
-              Generated: <code>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</code> · ADK-style Master-Detail Inspector with Single-Agent Action Traces.
-            </div>
-            """,
-            unsafe_allow_html=True,
+    # Top Data Controls & Action Bar
+    ctrl_col1, ctrl_col2 = st.columns([2.2, 1.3], gap="medium")
+    with ctrl_col1:
+        data_source_mode = st.radio(
+            "Select Evaluation Stream:",
+            options=["live", "benchmark"],
+            format_func=lambda x: "⚡ Live JobShield Audit Runs (Real Data from SQLite & Session)" if x == "live" else "🎯 Standard Benchmark Suite (10 Reference Test Cases)",
+            horizontal=True,
+            key="adk_eval_stream_mode",
+            label_visibility="collapsed"
         )
-    with col_d2:
+    with ctrl_col2:
+        last_anal = st.session_state.get("last_analysis")
+        standalone_html = generate_standalone_adk_eval_html(data_source=data_source_mode, live_analysis=last_anal)
         st.download_button(
             label="📥 Download eval_results_report.html",
             data=standalone_html,
             file_name="eval_results_report.html",
             mime="text/html",
             use_container_width=True,
-            help="Download the exact standalone HTML report file requested by your professor.",
+            help="Download the complete standalone HTML report matching your professor's specification, populated with this live telemetry.",
         )
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    # Ingest data
+    eval_data = get_adk_eval_summary(data_source=data_source_mode, live_analysis=last_anal)
 
-    # Metrics Summary Row
+    # Notification if current session analysis was detected and loaded
+    if data_source_mode == "live" and last_anal:
+        cur_role = getattr(last_anal.posting, "role", "Analyzed Posting") or "Analyzed Posting"
+        st.success(f"⚡ **Active Session Run Connected:** The posting you analyzed in Tab 1 (`{cur_role[:45]}`) is loaded at the top of this evaluation feed with live telemetry!", icon="🟢")
+
+    # Unified Telemetry Stat Cards
     m_c1, m_c2, m_c3, m_c4, m_c5, m_c6 = st.columns(6)
     with m_c1:
         st.markdown(
             f"""<div class="glass-card" style="text-align:center; padding:0.9rem;">
-              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">TOTAL CASES</div>
+              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">TOTAL RUNS</div>
               <div style="font-size:1.6rem; font-weight:800; color:var(--text-primary);">{eval_data['total_cases']}</div>
             </div>""",
             unsafe_allow_html=True,
@@ -1691,24 +1698,24 @@ with tab_adk_eval:
     with m_c2:
         st.markdown(
             f"""<div class="glass-card" style="text-align:center; padding:0.9rem;">
-              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">PASS</div>
-              <div style="font-size:1.6rem; font-weight:800; color:#10b981;">{eval_data['pass_count']}</div>
+              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">LOW RISK (GENUINE)</div>
+              <div style="font-size:1.6rem; font-weight:800; color:#10b981;">{eval_data['low_risk_count']}</div>
             </div>""",
             unsafe_allow_html=True,
         )
     with m_c3:
         st.markdown(
             f"""<div class="glass-card" style="text-align:center; padding:0.9rem;">
-              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">FAIL</div>
-              <div style="font-size:1.6rem; font-weight:800; color:#ef4444;">{eval_data['fail_count']}</div>
+              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">HIGH RISK (SCAMS)</div>
+              <div style="font-size:1.6rem; font-weight:800; color:#ef4444;">{eval_data['high_risk_count']}</div>
             </div>""",
             unsafe_allow_html=True,
         )
     with m_c4:
         st.markdown(
             f"""<div class="glass-card" style="text-align:center; padding:0.9rem;">
-              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">PASS RATE</div>
-              <div style="font-size:1.6rem; font-weight:800; color:#10b981;">{eval_data['pass_rate']}%</div>
+              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">NEEDS VERIF.</div>
+              <div style="font-size:1.6rem; font-weight:800; color:#f59e0b;">{eval_data['needs_verification_count']}</div>
             </div>""",
             unsafe_allow_html=True,
         )
@@ -1723,129 +1730,152 @@ with tab_adk_eval:
     with m_c6:
         st.markdown(
             f"""<div class="glass-card" style="text-align:center; padding:0.9rem;">
-              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">COST / RUN</div>
+              <div style="font-size:0.75rem; color:var(--text-muted); font-weight:700;">AVG COST / RUN</div>
               <div style="font-size:1.6rem; font-weight:800; color:var(--text-primary);">${eval_data['avg_cost_usd']}</div>
             </div>""",
             unsafe_allow_html=True,
         )
 
-    # Metric Chips
+    # Configured Metrics Bar
     chips_html = "".join([f"<span class='tech-badge'>{m}</span>" for m in eval_data["configured_metrics"]])
-    st.markdown(f"<div style='margin-top:0.6rem; margin-bottom:1.2rem;'><strong style='font-size:0.82rem; color:var(--text-muted);'>Configured ADK Metrics:</strong> {chips_html}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='margin-top:0.7rem; margin-bottom:1.2rem;'><strong style='font-size:0.82rem; color:var(--text-muted);'>CONFIGURED ADK METRICS:</strong> {chips_html}</div>", unsafe_allow_html=True)
 
-    import streamlit.components.v1 as components
+    # Master-Detail Layout (Native, responsive, matching JobShield UI)
+    ev_left, ev_right = st.columns([1.15, 2.25], gap="medium")
 
-    subtab_interactive, subtab_native = st.tabs([
-        "🖥️ ADK Visual Evaluation Report (Professor View)",
-        "📋 Native Streamlit Inspector & Logs",
-    ])
+    with ev_left:
+        st.markdown("#### 📂 Evaluated Runs")
+        search_kw = st.text_input("🔍 Filter by Company, Role, or ID", placeholder="Search...", key="adk_search_kw").strip().lower()
 
-    with subtab_interactive:
-        components.html(standalone_html, height=1050, scrolling=True)
+        # Category Filter Pills
+        cat_filter = st.radio(
+            "Filter Category:",
+            options=["ALL", "HIGH RISK", "NEEDS VERIFICATION", "LOW RISK"],
+            horizontal=True,
+            key="adk_cat_filter",
+            label_visibility="collapsed"
+        )
 
-    with subtab_native:
-        # Master-Detail Layout
-        ev_left, ev_right = st.columns([1.1, 2.3], gap="medium")
+        filtered_cases = []
+        for c in eval_data["cases"]:
+            blob = f"{c['eval_id']} {c['title']} {c['category']} {c.get('domain', '')}".lower()
+            if search_kw and search_kw not in blob:
+                continue
+            if cat_filter != "ALL" and c["category"].upper() != cat_filter:
+                continue
+            filtered_cases.append(c)
 
-        with ev_left:
-            st.markdown("#### 📂 Evaluation Cases")
-            search_kw = st.text_input("🔍 Filter by ID, Title, or Category", placeholder="Search...", key="adk_search_kw").strip().lower()
+        if filtered_cases:
+            def format_case_pill(cid: str) -> str:
+                match = next((x for x in filtered_cases if x["eval_id"] == cid), None)
+                if not match:
+                    return cid
+                short_title = match["title"][:28] + ("..." if len(match["title"]) > 28 else "")
+                cat_emoji = "🔴" if match["category"] == "High Risk" else ("🟢" if match["category"] == "Low Risk" else "🟡")
+                return f"{match['eval_id']} · {cat_emoji} {short_title} (⏱️ {match['latency']}s · 💰 ${match['cost_usd']})"
 
-            filtered_cases = []
-            for c in eval_data["cases"]:
-                blob = f"{c['eval_id']} {c['title']} {c['category']}".lower()
-                if not search_kw or search_kw in blob:
-                    filtered_cases.append(c)
+            chosen_id = st.radio(
+                "Select Case:",
+                options=[c["eval_id"] for c in filtered_cases],
+                format_func=format_case_pill,
+                label_visibility="collapsed",
+                key="adk_case_select",
+            )
+            selected_case = next(c for c in filtered_cases if c["eval_id"] == chosen_id)
+        else:
+            st.info("No audit runs match your filter.")
+            selected_case = eval_data["cases"][0] if eval_data["cases"] else None
 
-            case_options = {c["eval_id"]: f"{c['eval_id']} · {c['title'][:32]}..." for c in filtered_cases}
-            if filtered_cases:
-                chosen_id = st.radio(
-                    "Select Case:",
-                    options=list(case_options.keys()),
-                    format_func=lambda x: case_options[x],
-                    label_visibility="collapsed",
-                    key="adk_case_select",
-                )
-                selected_case = next(c for c in filtered_cases if c["eval_id"] == chosen_id)
-            else:
-                st.info("No test cases match your search.")
-                selected_case = eval_data["cases"][0] if eval_data["cases"] else None
-
-        with ev_right:
-            if selected_case:
-                badge_color = "#10b981" if selected_case["status"] == "PASS" else "#ef4444"
-                st.markdown(
-                    f"""
-                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border-color); padding-bottom:0.75rem; margin-bottom:0.75rem;">
-                      <div>
-                        <h3 style="margin:0; font-size:1.25rem;">{selected_case['title']}</h3>
-                        <div style="font-size:0.84rem; color:var(--text-muted); margin-top:0.25rem;">
-                          Eval ID: <code>{selected_case['eval_id']}</code> &nbsp;|&nbsp; Category: <strong>{selected_case['category']}</strong> &nbsp;|&nbsp; Latency: <strong>{selected_case['latency']}s</strong>
-                        </div>
-                      </div>
-                      <span style="background:{badge_color}22; color:{badge_color}; border:1px solid {badge_color}44; padding:0.35rem 1rem; border-radius:9999px; font-weight:800; font-size:0.88rem;">
-                        {selected_case['status']}
-                      </span>
+    with ev_right:
+        if selected_case:
+            badge_color = "#ef4444" if selected_case["category"] == "High Risk" else ("#10b981" if selected_case["category"] == "Low Risk" else "#f59e0b")
+            status_color = "#10b981" if selected_case["status"] == "PASS" else "#ef4444"
+            st.markdown(
+                f"""
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px solid var(--border-color); padding-bottom:0.75rem; margin-bottom:0.75rem;">
+                  <div>
+                    <h3 style="margin:0; font-size:1.25rem; color:var(--text-primary);">{selected_case['title']}</h3>
+                    <div style="font-size:0.84rem; color:var(--text-muted); margin-top:0.35rem;">
+                      Run ID: <code>{selected_case['eval_id']}</code> &nbsp;|&nbsp;
+                      Execution Latency: <strong>{selected_case['latency']}s</strong> &nbsp;|&nbsp;
+                      API Compute Cost: <strong>${selected_case['cost_usd']}</strong> &nbsp;|&nbsp;
+                      Tokens: <strong>{selected_case.get('total_tokens', 1050):,}</strong>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                  </div>
+                  <div style="text-align:right;">
+                    <span style="background:{badge_color}22; color:{badge_color}; border:1px solid {badge_color}55; padding:0.35rem 0.9rem; border-radius:9999px; font-weight:800; font-size:0.82rem; margin-right:0.4rem;">
+                      {selected_case['category'].upper()}
+                    </span>
+                    <span style="background:{status_color}22; color:{status_color}; border:1px solid {status_color}55; padding:0.35rem 0.9rem; border-radius:9999px; font-weight:800; font-size:0.82rem;">
+                      {selected_case['status']}
+                    </span>
+                  </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-                # Agent Invocations Badge Row
-                st.markdown(
-                    """
-                    <div style="margin-bottom: 1rem;">
-                      <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 1 · Parser</span>
-                      <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 2 · Planner</span>
-                      <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 3 · Red Flags</span>
-                      <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 4 · FAISS</span>
-                      <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 5 · FastMCP</span>
-                      <span class="brand-pill">✓ Agent 6 · Arbiter</span>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+            # Agent Invocations Badge Row
+            st.markdown(
+                """
+                <div style="margin-bottom: 1.1rem;">
+                  <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 1 · Parser</span>
+                  <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 2 · Planner</span>
+                  <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 3 · Red Flags</span>
+                  <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 4 · FAISS</span>
+                  <span class="brand-pill" style="margin-right:0.3rem;">✓ Agent 5 · FastMCP</span>
+                  <span class="brand-pill">✓ Agent 6 · Arbiter</span>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-                # 1. Metrics Table
-                st.markdown("##### 📊 Per-Agent Metrics & Trajectory Scores")
-                metrics_table_rows = []
-                for m in selected_case["metrics"]:
-                    m_stat_color = "🟢 PASS" if m["status"] == "PASS" else "🔴 FAIL"
-                    metrics_table_rows.append({
-                        "Agent Scope": f"`{m['scope']}`",
-                        "Metric Name": m["metric_name"],
-                        "Observed Score": f"{m['score']:.2f}",
-                        "Threshold": f">= {m['threshold']:.2f}",
-                        "Status": m_stat_color,
-                    })
-                st.dataframe(metrics_table_rows, use_container_width=True, hide_index=True)
+            # 1. Metrics Table
+            st.markdown("##### 📊 Per-Agent Metrics & Trajectory Scores")
+            metrics_table_rows = []
+            for m in selected_case["metrics"]:
+                m_stat_color = "🟢 PASS" if m["status"] == "PASS" else "🔴 FAIL"
+                metrics_table_rows.append({
+                    "Agent Scope": f"`{m['scope']}`",
+                    "Metric Name": m["metric_name"],
+                    "Observed Score": f"{m['score']:.2f}",
+                    "Threshold": f">= {m['threshold']:.2f}",
+                    "Status": m_stat_color,
+                })
+            st.dataframe(metrics_table_rows, use_container_width=True, hide_index=True)
 
-                # 2. Tool Trajectory Comparison
-                st.markdown("##### 🛠️ FastMCP Tool Call Trajectory (Actual vs Expected)")
-                t_col1, t_col2 = st.columns(2)
-                with t_col1:
-                    st.caption("🟢 Actual FastMCP Tool Invocations:")
-                    actual_calls_str = "\n".join(selected_case.get("actual_calls", [])) or "(No external tool calls required)"
-                    st.code(actual_calls_str, language="json")
-                with t_col2:
-                    st.caption("📋 Expected Tool Trajectory Benchmark:")
-                    expected_calls_str = "\n".join(selected_case.get("expected_calls", [])) or "(No external tool calls required)"
-                    st.code(expected_calls_str, language="json")
+            # 2. Tool Trajectory Comparison
+            st.markdown("##### 🛠️ FastMCP Tool Call Trajectory (Actual vs Expected)")
+            t_col1, t_col2 = st.columns(2)
+            with t_col1:
+                st.caption("🟢 Actual FastMCP Tool Invocations:")
+                actual_calls_str = "\n".join(selected_case.get("actual_calls", [])) or "(No external tool calls required)"
+                st.code(actual_calls_str, language="json")
+            with t_col2:
+                st.caption("📋 Expected Tool Trajectory Benchmark:")
+                expected_calls_str = "\n".join(selected_case.get("expected_calls", [])) or "(No external tool calls required)"
+                st.code(expected_calls_str, language="json")
 
-                # 3. Response Comparison
-                st.markdown("##### ⚖️ Verdict & Response Comparison (System vs Ground Truth)")
-                r_col1, r_col2 = st.columns(2)
-                with r_col1:
-                    st.caption("🛡️ Actual System Output:")
-                    st.info(selected_case.get("actual_response", ""))
-                with r_col2:
-                    st.caption("🎯 Expected Ground Truth Benchmark:")
-                    st.success(selected_case.get("expected_response", ""))
+            # 3. Response Comparison
+            st.markdown("##### ⚖️ Verdict & Response Comparison (System vs Ground Truth)")
+            r_col1, r_col2 = st.columns(2)
+            with r_col1:
+                st.caption("🛡️ Actual System Output:")
+                st.info(selected_case.get("actual_response", ""))
+            with r_col2:
+                st.caption("🎯 Expected Benchmark:")
+                st.success(selected_case.get("expected_response", ""))
 
-                # 4. Single-Agent Work Logs (The exact core requirement from the professor!)
-                st.markdown("##### 🤖 Single-Agent Work Logs (Individual Agent Action Trace)")
-                if "agent_work_logs" in selected_case:
-                    for agent_name, log_desc in selected_case["agent_work_logs"].items():
-                        with st.expander(f"🔍 {agent_name} Work Log", expanded=True):
-                            st.markdown(f"```text\n{log_desc}\n```")
+            # 4. Single-Agent Work Logs (The exact core requirement from the professor!)
+            st.markdown("##### 🤖 Single-Agent Work Logs (Individual Agent Action Trace)")
+            if "agent_work_logs" in selected_case:
+                for agent_name, log_desc in selected_case["agent_work_logs"].items():
+                    with st.expander(f"🔍 {agent_name} Work Log", expanded=True):
+                        st.markdown(f"```text\n{log_desc}\n```")
+
+    # Optional Standalone Report File Preview for Professor
+    st.markdown("<br><hr style='border-color:var(--border-color);'>", unsafe_allow_html=True)
+    with st.expander("📄 View Exportable Standalone ADK HTML Report (For Offline Grading / Submission)", expanded=False):
+        st.caption("This interactive view contains the exact self-contained HTML/CSS/JS export file generated from the live JobShield telemetry above.")
+        components.html(standalone_html, height=850, scrolling=True)
 
