@@ -8,9 +8,15 @@ import json
 import os
 import re
 import time
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import streamlit as st
+
+import importlib
+import src.pipeline as pipeline_mod
+import src.storage as storage_mod
+importlib.reload(pipeline_mod)
+importlib.reload(storage_mod)
 
 from src.pipeline import analyze_posting, analyze_url, analyze_document
 from src.schemas import AnalysisResult
@@ -995,6 +1001,8 @@ with tab_analyzer:
             try:
                 analysis_res = analyze_posting(cleaned_jd)
                 st.session_state["last_analysis"] = analysis_res
+                st.session_state["obs_filter_run_id"] = analysis_res.run_id
+                st.session_state["obs_last_synced_id"] = analysis_res.run_id
                 if "session_analyses" not in st.session_state:
                     st.session_state["session_analyses"] = []
                 if not any(getattr(x, "run_id", None) == analysis_res.run_id for x in st.session_state["session_analyses"]):
@@ -1484,21 +1492,152 @@ with tab_observability:
 
     obs_c1, obs_c2 = st.columns(2, gap="large")
 
+    IST_TZ = timezone(timedelta(hours=5, minutes=30))
+
+    def _format_to_ist(ts_raw: str, include_date: bool = False) -> str:
+        """Convert raw UTC timestamp into accurate Indian Standard Time (IST / GMT+5:30 Delhi)."""
+        if not ts_raw:
+            return "--:--:--" if not include_date else "----/--/-- --:--:--"
+        try:
+            clean = ts_raw.strip().replace("Z", "+00:00")
+            if "T" in clean:
+                dt = datetime.fromisoformat(clean)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                ist_dt = dt.astimezone(IST_TZ)
+                return ist_dt.strftime("%Y-%m-%d %H:%M:%S" if include_date else "%H:%M:%S")
+            elif " " in clean:
+                dt = datetime.strptime(clean[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                ist_dt = dt.astimezone(IST_TZ)
+                return ist_dt.strftime("%Y-%m-%d %H:%M:%S" if include_date else "%H:%M:%S")
+        except Exception:
+            pass
+        m = re.search(r"(\d{2}:\d{2}:\d{2})", ts_raw)
+        return m.group(1) if m else ts_raw[:19]
+
     with obs_c1:
         st.markdown("### 🗄️ Recent Analysis Runs (SQLite Audit Table)")
         runs = get_recent_runs(limit=10)
         if runs:
-            st.dataframe(runs, use_container_width=True, hide_index=True)
+            clean_runs = []
+            for r in runs:
+                clean_runs.append({
+                    "Run ID": r.get("run_id", "")[:8] + "...",
+                    "Timestamp (IST)": _format_to_ist(r.get("created_at", ""), include_date=True),
+                    "Verdict": r.get("category", ""),
+                    "Latency": f"{r.get('duration_seconds', 0)}s",
+                    "Summary": (r.get("summary", "")[:50] + "...") if len(r.get("summary", "")) > 50 else r.get("summary", ""),
+                })
+            st.dataframe(clean_runs, use_container_width=True, hide_index=True)
         else:
             st.info("No runs recorded yet in `data/jobshield.sqlite3`.")
 
     with obs_c2:
         st.markdown("### 📜 Real-Time Workflow Event Callbacks")
-        events = get_workflow_events(limit=15)
+        
+        # Interactive Run Filter & Refresh
+        f_col1, f_col2 = st.columns([2.2, 1.3])
+        with f_col1:
+            run_options = ["All Recent Runs"]
+            if runs:
+                run_options += [r["run_id"] for r in runs[:15]]
+            
+            # Sync to latest analysis if a new one was run
+            last_run = st.session_state.get("last_analysis")
+            if last_run and getattr(last_run, "run_id", None):
+                active_id = last_run.run_id
+                if st.session_state.get("obs_last_synced_id") != active_id and active_id in run_options:
+                    st.session_state["obs_filter_run_id"] = active_id
+                    st.session_state["obs_last_synced_id"] = active_id
+
+            # Ensure current value is valid
+            cur_filter_val = st.session_state.get("obs_filter_run_id", "All Recent Runs")
+            if cur_filter_val not in run_options:
+                cur_filter_val = run_options[0]
+                st.session_state["obs_filter_run_id"] = cur_filter_val
+
+            selected_run = st.selectbox(
+                "Filter Events by Run ID:",
+                options=run_options,
+                index=run_options.index(cur_filter_val),
+                key="obs_filter_run_id",
+                label_visibility="collapsed"
+            )
+        with f_col2:
+            rf_col_a, rf_col_b = st.columns(2)
+            with rf_col_a:
+                auto_refresh = st.checkbox("⚡ Live", value=False, key="obs_auto_poll_toggle", help="Auto-refresh every 3s")
+            with rf_col_b:
+                if st.button("🔄 Refresh", use_container_width=True):
+                    st.rerun()
+
+        filter_run_id = None if selected_run == "All Recent Runs" else selected_run
+        events = get_workflow_events(run_id=filter_run_id, limit=30)
+
         if events:
-            st.dataframe(events, use_container_width=True, hide_index=True)
+            # View format toggle & Time column visibility toggle
+            v_col1, v_col2 = st.columns([1.8, 1.4])
+            with v_col1:
+                log_view_type = st.radio(
+                    "Log View Mode:",
+                    options=["📋 Sequential Table", "📟 Raw Log Console"],
+                    horizontal=True,
+                    key="obs_log_view_type",
+                    label_visibility="collapsed",
+                )
+            with v_col2:
+                show_time_col = st.checkbox("⏱️ Show Time (IST)", value=True, key="obs_show_ist_time_col", help="Toggle Indian Standard Time (+5:30 GMT Delhi)")
+
+            if log_view_type == "📋 Sequential Table":
+                clean_events = []
+                for i, ev in enumerate(events, 1):
+                    seq_tag = f"Step #{i}" if filter_run_id else f"#{i:02d}"
+                    stat_val = ev.get("status", "completed")
+                    stat_icon = "✅ Completed" if stat_val == "completed" else ("⚡ Active" if stat_val == "intermediate_step" else stat_val)
+                    row_entry = {
+                        "Seq": seq_tag,
+                    }
+                    if show_time_col:
+                        row_entry["Time (IST)"] = _format_to_ist(ev.get("timestamp", ""))
+                    row_entry["Agent / Component"] = ev.get("component", "")
+                    row_entry["Status"] = stat_icon
+                    row_entry["Execution Log Callback"] = ev.get("detail", "")
+                    clean_events.append(row_entry)
+
+                cfg = {
+                    "Seq": st.column_config.TextColumn("Seq", width="small"),
+                    "Agent / Component": st.column_config.TextColumn("Agent / Component", width="medium"),
+                    "Status": st.column_config.TextColumn("Status", width="small"),
+                    "Execution Log Callback": st.column_config.TextColumn("Execution Log Callback", width="large"),
+                }
+                if show_time_col:
+                    cfg["Time (IST)"] = st.column_config.TextColumn("Time (IST)", width="small")
+
+                st.dataframe(
+                    clean_events,
+                    use_container_width=True,
+                    hide_index=True,
+                    column_config=cfg
+                )
+            else:
+                terminal_lines = []
+                for i, ev in enumerate(events, 1):
+                    t = _format_to_ist(ev.get("timestamp", ""))
+                    seq_str = f"STEP {i:02d}" if filter_run_id else f"LOG #{i:02d}"
+                    comp = ev.get("component", "SYSTEM").upper()[:18].ljust(18)
+                    stat = ev.get("status", "INFO").upper()[:9].ljust(9)
+                    det = ev.get("detail", "")
+                    if show_time_col:
+                        terminal_lines.append(f"[{t} IST] [{seq_str}] [{comp}] [{stat}] {det}")
+                    else:
+                        terminal_lines.append(f"[{seq_str}] [{comp}] [{stat}] {det}")
+                st.code("\n".join(terminal_lines), language="log")
         else:
             st.info("No workflow events logged yet.")
+
+        if auto_refresh:
+            time.sleep(3)
+            st.rerun()
 
     st.markdown("---")
     st.markdown("### 📡 Open-Source Observability Platform: Langfuse / OpenInference")

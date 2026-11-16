@@ -4,6 +4,7 @@ import hmac
 import json
 import os
 import sqlite3
+from datetime import datetime, timezone
 from typing import Any
 from .schemas import AnalysisResult
 from .paths import DATA_DIR
@@ -77,6 +78,33 @@ def init_db() -> None:
                 SELECT run_id FROM analysis_runs WHERE category IS NOT NULL ORDER BY created_at DESC LIMIT 60
             """)
 
+        # Backfill workflow_events from analysis_details if empty
+        cur.execute("SELECT count(*) FROM workflow_events")
+        if cur.fetchone()[0] == 0:
+            cur.execute("""
+                SELECT r.run_id, r.created_at, d.workflow_events_json
+                FROM analysis_runs r
+                JOIN analysis_details d ON r.run_id = d.run_id
+                ORDER BY r.created_at ASC
+            """)
+            for r_id, c_at, w_json in cur.fetchall():
+                try:
+                    ev_list = json.loads(w_json) if w_json else []
+                    for ev in ev_list:
+                        component = "workflow-step"
+                        status = "completed"
+                        detail = ev
+                        if ":" in ev:
+                            parts = ev.split(":", 1)
+                            component = parts[0].strip()
+                            detail = parts[1].strip()
+                        conn.execute(
+                            "INSERT INTO workflow_events (timestamp, run_id, component, status, detail) VALUES (?, ?, ?, ?, ?)",
+                            (c_at, r_id, component, status, detail),
+                        )
+                except Exception:
+                    pass
+
 
 def register_user(email: str, password: str, name: str = "Lead Analyst", role: str = "Lead Analyst") -> tuple[bool, str]:
     """Register a new user account."""
@@ -143,6 +171,24 @@ def save_result(result: AnalysisResult, raw_text: str) -> None:
         ))
         conn.execute("""INSERT OR REPLACE INTO adk_eval_runs (run_id) VALUES (?)""", (result.run_id,))
 
+        # Ensure workflow events are persisted into workflow_events table
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM workflow_events WHERE run_id = ?", (result.run_id,))
+        if cur.fetchone()[0] == 0 and result.workflow_events:
+            now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            for ev in result.workflow_events:
+                component = "workflow-step"
+                status = "completed"
+                detail = ev
+                if ":" in ev:
+                    parts = ev.split(":", 1)
+                    component = parts[0].strip()
+                    detail = parts[1].strip()
+                conn.execute(
+                    "INSERT INTO workflow_events (timestamp, run_id, component, status, detail) VALUES (?, ?, ?, ?, ?)",
+                    (now_str, result.run_id, component, status, detail),
+                )
+
 
 def get_recent_runs(limit: int = 15) -> list[dict[str, Any]]:
     """Retrieve historical analysis runs for audit inspection."""
@@ -162,7 +208,7 @@ def get_recent_runs(limit: int = 15) -> list[dict[str, Any]]:
 
 
 def get_workflow_events(run_id: str | None = None, limit: int = 40) -> list[dict[str, Any]]:
-    """Retrieve event callback log entries from SQLite."""
+    """Retrieve event callback log entries from SQLite with automatic self-healing sync."""
     init_db()
     with sqlite3.connect(DB_PATH) as conn:
         conn.row_factory = sqlite3.Row
@@ -172,14 +218,84 @@ def get_workflow_events(run_id: str | None = None, limit: int = 40) -> list[dict
                 SELECT timestamp, run_id, component, status, detail
                 FROM workflow_events
                 WHERE run_id = ?
-                ORDER BY event_id DESC
+                ORDER BY event_id ASC
                 LIMIT ?
             """, (run_id, limit))
+            results = [dict(row) for row in cur.fetchall()]
+            if results:
+                return results
+
+            # Self-healing fallback: extract and sync from analysis_details if missing
+            cur.execute("""
+                SELECT r.run_id, r.created_at, d.workflow_events_json
+                FROM analysis_runs r
+                JOIN analysis_details d ON r.run_id = d.run_id
+                WHERE r.run_id = ?
+            """, (run_id,))
+            row = cur.fetchone()
+            if row:
+                r_id, c_at, w_json = row
+                try:
+                    ev_list = json.loads(w_json) if w_json else []
+                    for ev in ev_list:
+                        component = "workflow-step"
+                        status = "completed"
+                        detail = ev
+                        if ":" in ev:
+                            parts = ev.split(":", 1)
+                            component = parts[0].strip()
+                            detail = parts[1].strip()
+                        conn.execute(
+                            "INSERT INTO workflow_events (timestamp, run_id, component, status, detail) VALUES (?, ?, ?, ?, ?)",
+                            (c_at, r_id, component, status, detail),
+                        )
+                    conn.commit()
+                    cur.execute("""
+                        SELECT timestamp, run_id, component, status, detail
+                        FROM workflow_events
+                        WHERE run_id = ?
+                        ORDER BY event_id ASC
+                        LIMIT ?
+                    """, (run_id, limit))
+                    return [dict(r) for r in cur.fetchall()]
+                except Exception:
+                    pass
+            return []
         else:
+            # Sync any recent analysis_runs missing from workflow_events
+            try:
+                cur.execute("""
+                    SELECT r.run_id, r.created_at, d.workflow_events_json
+                    FROM analysis_runs r
+                    JOIN analysis_details d ON r.run_id = d.run_id
+                    WHERE r.run_id NOT IN (SELECT DISTINCT run_id FROM workflow_events)
+                    ORDER BY r.created_at DESC
+                    LIMIT 20
+                """)
+                missing_runs = cur.fetchall()
+                if missing_runs:
+                    for r_id, c_at, w_json in missing_runs:
+                        ev_list = json.loads(w_json) if w_json else []
+                        for ev in ev_list:
+                            component = "workflow-step"
+                            status = "completed"
+                            detail = ev
+                            if ":" in ev:
+                                parts = ev.split(":", 1)
+                                component = parts[0].strip()
+                                detail = parts[1].strip()
+                            conn.execute(
+                                "INSERT INTO workflow_events (timestamp, run_id, component, status, detail) VALUES (?, ?, ?, ?, ?)",
+                                (c_at, r_id, component, status, detail),
+                            )
+                    conn.commit()
+            except Exception:
+                pass
+
             cur.execute("""
                 SELECT timestamp, run_id, component, status, detail
                 FROM workflow_events
                 ORDER BY event_id DESC
                 LIMIT ?
             """, (limit,))
-        return [dict(row) for row in cur.fetchall()]
+            return [dict(row) for row in cur.fetchall()]

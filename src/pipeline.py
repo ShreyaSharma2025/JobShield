@@ -25,6 +25,7 @@ from .policy import calculate_decision
 from .schemas import AnalysisResult
 from .storage import save_result
 from .guardrails import validate_posting_text
+from .observability import record_event, set_current_run_id
 
 
 # ====================================================================================================
@@ -408,7 +409,13 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     """Run full deterministic multi-agent workflow when CrewAI LLM stack is not active."""
     started_at = perf_counter()
     run_id = str(uuid4())
+    set_current_run_id(run_id)
     workflow_events: list[str] = []
+
+    # ------------------------------------------------------------------------------------------------
+    # [NODE 0: PRE-FLIGHT INPUT GUARDRAILS SHIELD]
+    # ------------------------------------------------------------------------------------------------
+    record_event(run_id, "guardrails-shield", "completed", "Input text boundary and prompt injection security scan passed.")
 
     # ------------------------------------------------------------------------------------------------
     # [NODE 2 / AGENT 1 · L70: POSTING PARSER SPECIALIST AGENT]
@@ -416,6 +423,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     # ------------------------------------------------------------------------------------------------
     workflow_events.append("1. Posting Parser Agent: Extracted structured fields and candidate attributes.")
     posting = parse_posting(text)
+    record_event(run_id, "1. Posting Parser Agent", "completed", f"Extracted entity '{posting.company_name or 'Unspecified'}', role '{posting.role or 'Unspecified'}'")
 
     # ------------------------------------------------------------------------------------------------
     # [NODE 3 / AGENT 2 · L77: COORDINATOR & DYNAMIC ROUTING PLANNER]
@@ -427,6 +435,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     investigation_steps.append("Historical Vector Similarity")
     investigation_steps.append("Evidence Synthesis & Verdict")
     workflow_events.append(f"2. Coordinator / Investigation Planner: Dynamic plan formulated: {', '.join(investigation_steps)}.")
+    record_event(run_id, "2. Investigation Planner", "completed", f"Dynamic plan formulated: {', '.join(investigation_steps)}")
 
     # ------------------------------------------------------------------------------------------------
     # [NODE 4 / AGENT 3 · L88: RED-FLAG THREAT SCANNER AGENT]
@@ -435,6 +444,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     workflow_events.append("3. Red-Flag Detection Agent: Evaluated rule-based indicators and sensitive patterns.")
     evidence = detect_red_flags(text)
     workflow_events.append(f"   -> Identified {len(evidence)} supported evidence finding(s).")
+    record_event(run_id, "3. Red-Flag Threat Scanner", "completed", f"Evaluated rules: identified {len(evidence)} supported evidence finding(s)")
 
     # ------------------------------------------------------------------------------------------------
     # [NODE 5 / AGENT 4 · L96: HISTORICAL FAISS VECTOR SIMILARITY AGENT]
@@ -449,14 +459,17 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
         if raw_similar:
             similar_postings = [SimilarPosting.model_validate(item) for item in raw_similar]
             workflow_events.append(f"4. Similarity Agent: Retrieved {len(similar_postings)} nearest labeled historical posting(s).")
+            record_event(run_id, "4. FAISS Similarity Agent", "completed", f"Retrieved {len(similar_postings)} nearest labeled historical posting(s)")
             similarity_review = SimilarityReview(
                 summary=f"Retrieved {len(similar_postings)} historical posting(s) with closest semantic patterns.",
                 limitation="Historical similarity is supporting context for patterns only, not mathematical proof of fraud."
             )
         else:
             workflow_events.append("4. Similarity Agent: No historical index match or index still initializing.")
+            record_event(run_id, "4. FAISS Similarity Agent", "notice", "No historical index match or index still initializing")
     except Exception as err:
         workflow_events.append(f"4. Similarity Agent: Notice - {type(err).__name__}")
+        record_event(run_id, "4. FAISS Similarity Agent", "error", f"Notice - {type(err).__name__}")
 
 
     # ------------------------------------------------------------------------------------------------
@@ -465,6 +478,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     # ------------------------------------------------------------------------------------------------
     company_check = verify_company_live(posting, evidence)
     workflow_events.append(f"5. Company Verification Agent: Checked public sources and domain (Status: {company_check.status}).")
+    record_event(run_id, "5. FastMCP Company Verifier", "completed", f"Checked public sources & domain (Status: {company_check.status}) across {len(company_check.queried_sites)} endpoints")
 
 
     # ------------------------------------------------------------------------------------------------
@@ -474,6 +488,7 @@ def _analyze_without_crewai(text: str) -> AnalysisResult:
     # ------------------------------------------------------------------------------------------------
     decision = calculate_decision(evidence, company_check)
     workflow_events.append(f"6. Evidence / Verdict Agent: Synthesis complete -> Category assigned: {decision.category}.")
+    record_event(run_id, "6. Evidence & Verdict Arbiter", "completed", f"Synthesis complete -> Category assigned: {decision.category}")
 
     duration = round(perf_counter() - started_at, 2)
     result = AnalysisResult(
