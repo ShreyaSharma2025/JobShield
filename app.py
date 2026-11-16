@@ -1638,7 +1638,11 @@ with tab_architecture:
 # Matches the Professor's ADK Eval Results Report Specification
 # =============================================================================
 with tab_adk_eval:
-    from src.adk_eval import get_adk_eval_summary, generate_standalone_adk_eval_html
+    import importlib
+    import src.adk_eval as adk_eval_mod
+    importlib.reload(adk_eval_mod)
+    get_adk_eval_summary = adk_eval_mod.get_adk_eval_summary
+    generate_standalone_adk_eval_html = adk_eval_mod.generate_standalone_adk_eval_html
     import streamlit.components.v1 as components
 
     st.markdown(

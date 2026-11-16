@@ -520,7 +520,7 @@ def get_live_jobshield_cases(limit: int = 50, live_analysis: Any | None = None) 
 # -----------------------------------------------------------------------------
 # 3. Main Data Aggregator
 # -----------------------------------------------------------------------------
-def get_adk_eval_summary(data_source: str = "live", live_analysis: Any | None = None) -> dict[str, Any]:
+def get_adk_eval_summary(data_source: str = "live", live_analysis: Any | None = None, *args: Any, **kwargs: Any) -> dict[str, Any]:
     """Return aggregated stats and evaluation cases for either live JobShield data or benchmarks."""
     if data_source == "benchmark":
         cases = get_benchmark_eval_cases()
@@ -569,7 +569,7 @@ def get_adk_eval_summary(data_source: str = "live", live_analysis: Any | None = 
 # -----------------------------------------------------------------------------
 # 4. Standalone HTML Report Generator (Matches Professor Specification)
 # -----------------------------------------------------------------------------
-def generate_standalone_adk_eval_html(data_source: str = "live", live_analysis: Any | None = None) -> str:
+def generate_standalone_adk_eval_html(data_source: str = "live", live_analysis: Any | None = None, *args: Any, **kwargs: Any) -> str:
     """Generate the exportable standalone HTML report populated with real JobShield telemetry."""
     data = get_adk_eval_summary(data_source=data_source, live_analysis=live_analysis)
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
