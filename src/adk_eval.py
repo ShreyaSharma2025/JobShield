@@ -505,83 +505,56 @@ def convert_run_to_eval_case(r: dict[str, Any], is_live_current: bool = False) -
 
 
 def get_live_jobshield_cases(
-    base_limit: int = 60,
     session_analyses: list[Any] | None = None,
     live_analysis: Any | None = None,
     *args: Any,
     **kwargs: Any
 ) -> list[dict[str, Any]]:
-    """Retrieve real analyzed job runs from JobShield SQLite and prepend active live session run if present."""
+    """Retrieve real analyzed job runs from JobShield SQLite adk_eval_runs table.
+    
+    Persists across browser refreshes, dynamically growing as new jobs are analyzed.
+    """
     init_db()
-    session_cases: list[dict[str, Any]] = []
-    seen_run_ids: set[str] = set()
 
-    # Ingest session analyses (the live runs done in the current browser session)
+    # Ingest session analyses into adk_eval_runs
     all_session: list[Any] = []
     if session_analyses:
         for sa in session_analyses:
-            rid = getattr(sa, "run_id", "")
-            if sa and rid not in seen_run_ids:
+            if sa and hasattr(sa, "run_id"):
                 all_session.append(sa)
-                seen_run_ids.add(rid)
-    if live_analysis:
-        rid = getattr(live_analysis, "run_id", "")
-        if rid not in seen_run_ids:
+    if live_analysis and hasattr(live_analysis, "run_id"):
+        if not any(getattr(x, "run_id", None) == live_analysis.run_id for x in all_session):
             all_session.append(live_analysis)
-            seen_run_ids.add(rid)
 
-    for anal in all_session:
-        try:
-            live_dict = {
-                "run_id": getattr(anal, "run_id", "live_current"),
-                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "raw_text": getattr(anal, "raw_text", ""),
-                "parsed_json": json.dumps(anal.posting.model_dump() if hasattr(anal, "posting") else {}),
-                "evidence_json": json.dumps([e.model_dump() if hasattr(e, "model_dump") else e for e in getattr(anal, "evidence", [])]),
-                "category": getattr(anal.decision, "category", "Needs Verification") if hasattr(anal, "decision") else "Needs Verification",
-                "summary": getattr(anal.decision, "summary", "") if hasattr(anal, "decision") else "",
-                "company_check_json": json.dumps(anal.company_check.model_dump() if hasattr(anal, "company_check") else {}),
-                "similar_postings_json": json.dumps([s.model_dump() if hasattr(s, "model_dump") else s for s in getattr(anal, "similar_postings", [])]),
-                "duration_seconds": getattr(anal, "duration_seconds", 1.22),
-                "token_usage_json": json.dumps(getattr(anal, "token_usage", {})),
-            }
-            session_cases.append(convert_run_to_eval_case(live_dict, is_live_current=True))
-        except Exception:
-            pass
+    with sqlite3.connect(DB_PATH) as conn:
+        for sa in all_session:
+            conn.execute("INSERT OR REPLACE INTO adk_eval_runs (run_id) VALUES (?)", (sa.run_id,))
+        conn.commit()
 
-    # Read base_limit historical runs from SQLite, skipping any already in session_cases
-    db_cases: list[dict[str, Any]] = []
-    try:
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.row_factory = sqlite3.Row
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT r.run_id, r.created_at, r.raw_text, r.parsed_json, r.evidence_json,
-                       r.category, r.summary, r.policy_version,
-                       d.company_check_json, d.similar_postings_json, d.workflow_events_json,
-                       d.duration_seconds, d.token_usage_json
-                FROM analysis_runs r
-                LEFT JOIN analysis_details d ON r.run_id = d.run_id
-                WHERE r.category IS NOT NULL
-                ORDER BY r.created_at DESC
-                LIMIT ?
-            """, (base_limit + len(session_cases) + 20,))
-            rows = [dict(row) for row in cur.fetchall()]
-            for r in rows:
-                if r.get("run_id") in seen_run_ids:
-                    continue
-                db_cases.append(convert_run_to_eval_case(r, is_live_current=False))
-                seen_run_ids.add(r.get("run_id", ""))
-                if len(db_cases) >= base_limit:
-                    break
-    except Exception:
-        pass
+        conn.row_factory = sqlite3.Row
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT r.run_id, r.created_at, r.raw_text, r.parsed_json, r.evidence_json,
+                   r.category, r.summary, r.policy_version,
+                   d.company_check_json, d.similar_postings_json, d.workflow_events_json,
+                   d.duration_seconds, d.token_usage_json
+            FROM adk_eval_runs e
+            JOIN analysis_runs r ON e.run_id = r.run_id
+            LEFT JOIN analysis_details d ON r.run_id = d.run_id
+            WHERE r.category IS NOT NULL
+            ORDER BY r.created_at DESC
+        """)
+        rows = [dict(row) for row in cur.fetchall()]
 
-    all_cases = session_cases + db_cases
-    if not all_cases:
-        all_cases = get_benchmark_eval_cases()
+    cases = []
+    for i, r in enumerate(rows):
+        is_current = (i == 0 and len(all_session) > 0)
+        cases.append(convert_run_to_eval_case(r, is_live_current=is_current))
 
-    return all_cases
+    if not cases:
+        cases = get_benchmark_eval_cases()
+
+    return cases
 
 
 # -----------------------------------------------------------------------------
@@ -591,7 +564,6 @@ def get_adk_eval_summary(
     data_source: str = "live",
     live_analysis: Any | None = None,
     session_analyses: list[Any] | None = None,
-    base_limit: int = 60,
     *args: Any,
     **kwargs: Any
 ) -> dict[str, Any]:
@@ -600,7 +572,6 @@ def get_adk_eval_summary(
         cases = get_benchmark_eval_cases()
     else:
         cases = get_live_jobshield_cases(
-            base_limit=base_limit,
             session_analyses=session_analyses,
             live_analysis=live_analysis
         )

@@ -64,6 +64,18 @@ def init_db() -> None:
             status TEXT NOT NULL,
             detail TEXT NOT NULL
         )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS adk_eval_runs (
+            run_id TEXT PRIMARY KEY,
+            added_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""")
+        # Seed initial 60 benchmark audit runs if empty
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM adk_eval_runs")
+        if cur.fetchone()[0] == 0:
+            conn.execute("""
+                INSERT OR IGNORE INTO adk_eval_runs (run_id)
+                SELECT run_id FROM analysis_runs WHERE category IS NOT NULL ORDER BY created_at DESC LIMIT 60
+            """)
 
 
 def register_user(email: str, password: str, name: str = "Lead Analyst", role: str = "Lead Analyst") -> tuple[bool, str]:
@@ -129,6 +141,7 @@ def save_result(result: AnalysisResult, raw_text: str) -> None:
             result.duration_seconds,
             json.dumps(result.token_usage, ensure_ascii=False),
         ))
+        conn.execute("""INSERT OR REPLACE INTO adk_eval_runs (run_id) VALUES (?)""", (result.run_id,))
 
 
 def get_recent_runs(limit: int = 15) -> list[dict[str, Any]]:

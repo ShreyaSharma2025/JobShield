@@ -1672,24 +1672,38 @@ with tab_adk_eval:
         session_anals = [last_anal] + list(session_anals)
         st.session_state["session_analyses"] = session_anals
 
+    # Determine mode first
+    active_stream_mode = st.session_state.get("adk_eval_stream_mode", "live")
+    eval_data = get_adk_eval_summary(
+        data_source=active_stream_mode,
+        live_analysis=last_anal,
+        session_analyses=session_anals,
+    )
+
     # Top Data Controls & Action Bar
     ctrl_col1, ctrl_col2 = st.columns([2.2, 1.3], gap="medium")
     with ctrl_col1:
-        live_label_count = 60 + len(session_anals)
+        live_label_count = eval_data["total_cases"] if active_stream_mode == "live" else len(get_live_jobshield_cases())
         data_source_mode = st.radio(
             "Select Evaluation Stream:",
             options=["live", "benchmark"],
-            format_func=lambda x: f"⚡ Live JobShield Audit Runs ({live_label_count} Runs · Real Data from SQLite & Session)" if x == "live" else "🎯 Standard Benchmark Suite (6 Reference Test Cases)",
+            format_func=lambda x: f"⚡ Live JobShield Audit Runs ({live_label_count} Runs · Persistent Real Data)" if x == "live" else "🎯 Standard Benchmark Suite (6 Reference Test Cases)",
             horizontal=True,
             key="adk_eval_stream_mode",
             label_visibility="collapsed"
         )
+        if data_source_mode != active_stream_mode:
+            eval_data = get_adk_eval_summary(
+                data_source=data_source_mode,
+                live_analysis=last_anal,
+                session_analyses=session_anals,
+            )
+
     with ctrl_col2:
         standalone_html = generate_standalone_adk_eval_html(
             data_source=data_source_mode,
             live_analysis=last_anal,
             session_analyses=session_anals,
-            base_limit=60
         )
         st.download_button(
             label="📥 Download eval_results_report.html",
@@ -1699,14 +1713,6 @@ with tab_adk_eval:
             use_container_width=True,
             help="Download the complete standalone HTML report matching your professor's specification, populated with this live telemetry.",
         )
-
-    # Ingest data
-    eval_data = get_adk_eval_summary(
-        data_source=data_source_mode,
-        live_analysis=last_anal,
-        session_analyses=session_anals,
-        base_limit=60
-    )
 
     # Notification if current session analysis was detected and loaded
     if data_source_mode == "live" and last_anal:
@@ -1801,6 +1807,16 @@ with tab_adk_eval:
                 short_title = match["title"][:28] + ("..." if len(match["title"]) > 28 else "")
                 cat_emoji = "🔴" if match["category"] == "High Risk" else ("🟢" if match["category"] == "Low Risk" else "🟡")
                 return f"{match['eval_id']} · {cat_emoji} {short_title} (⏱️ {match['latency']}s · 💰 ${match['cost_usd']})"
+
+            # Auto-sync selection whenever a newly analyzed run enters the feed
+            top_eval_id = filtered_cases[0]["eval_id"]
+            if st.session_state.get("adk_last_auto_id") != top_eval_id:
+                st.session_state["adk_case_select"] = top_eval_id
+                st.session_state["adk_last_auto_id"] = top_eval_id
+
+            current_choice = st.session_state.get("adk_case_select")
+            if not any(c["eval_id"] == current_choice for c in filtered_cases):
+                st.session_state["adk_case_select"] = top_eval_id
 
             chosen_id = st.radio(
                 "Select Case:",
